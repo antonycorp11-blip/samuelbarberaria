@@ -1,0 +1,102 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/manrope';
+@import '@fontsource-variable/fraunces';
+
+@theme {
+  --color-bg: #100e0c;
+  --color-surface: #1a1714;
+  --color-raised: #25201b;
+  --color-line: #352e27;
+  --color-ink: #f5f0e7;
+  --color-muted: #a89e90;
+  --color-brass: #d9a441;
+  --color-brass-ink: #1b1407;
+  --color-ok: #74c491;
+  --color-warn: #e8ab4e;
+  --color-bad: #ec7a70;
+  --color-info: #8fb4e3;
+  --font-sans: 'Manrope Variable', system-ui, sans-serif;
+  --font-display: 'Fraunces Variable', Georgia, serif;
+}
+
+html {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
+  background: var(--color-bg);
+}
+
+/* 16px evita o zoom automático do iOS ao focar um campo. */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brass);
+  outline-offset: 2px;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+.no-bar {
+  scrollbar-width: none;
+}
+.no-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.pb-nav {
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+}
+.pt-safe {
+  padding-top: max(14px, env(safe-area-inset-top));
+}
+.pb-safe {
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+.hatch {
+  background-image: repeating-linear-gradient(135deg, #2b2620 0 6px, #1f1b17 6px 12px);
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.anim-sheet {
+  animation: sheet-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.anim-fade {
+  animation: fade-in 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-sheet,
+  .anim-fade {
+    animation: none;
+  }
+}

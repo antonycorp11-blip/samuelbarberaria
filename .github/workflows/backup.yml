@@ -1,0 +1,30 @@
+name: Backup diário
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # 03:00 em São Paulo
+  workflow_dispatch:
+
+jobs:
+  backup:
+    # Só liga depois que o banco existir: defina a variável BACKUP_ENABLED=true no repositório.
+    if: vars.BACKUP_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gerar backup criptografado
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: scripts/backup.sh "backup-$(date -u +%F).sql.gz.enc"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backup-${{ github.run_id }}
+          path: backup-*.sql.gz.enc
+          retention-days: 90
+          if-no-files-found: error
+      - name: Manter o projeto ativo
+        run: |
+          curl --fail --silent --output /dev/null \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/settings?select=id&limit=1"
