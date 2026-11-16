@@ -1,7 +1,7 @@
 import { isValidEmail, normalizePhone } from './agenda'
 import { audit, base, must, type Command } from './engine'
 import { fail } from './errors'
-import { enqueue } from './messages'
+import { enqueue, welcomeMessage } from './messages'
 import { addDays, dateKey, diffDays } from './time'
 import type { Appointment, Client, DateKey, DbState, ID, Sale } from './types'
 
@@ -24,15 +24,9 @@ export const upsertClient: Command<
     return i.id
   }
   const id = ctx.id()
-  d.clients.push({ ...data, id, stamps: 0, rewards: 0, createdAt: ctx.now })
-  enqueue(d, ctx, {
-    to: email,
-    clientId: id,
-    kind: 'welcome',
-    subject: `Bem-vindo à ${s.settings.shopName}`,
-    body: `${data.name.split(' ')[0]}, que bom ter você com a gente.`,
-    dedupeKey: `welcome:${id}`,
-  })
+  const client = { ...data, id, stamps: 0, rewards: 0, createdAt: ctx.now }
+  d.clients.push(client)
+  enqueue(d, ctx, welcomeMessage(client))
   audit(d, ctx, 'cliente.criar', id)
   return id
 }

@@ -1,16 +1,21 @@
 import { CalendarDays, Home, Plus, Users, LayoutGrid } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom'
-import { useActor } from '@/data/store'
+import { useActor, useReady, useSession } from '@/data/store'
+import { linkTeamDevice } from '@/integrations/push'
 import AgendaPage from '@/pages/Agenda'
 import ClientDetailPage from '@/pages/ClientDetail'
 import ClientsPage from '@/pages/Clients'
 import ClubPage from '@/pages/Club'
 import FinancePage from '@/pages/Finance'
 import HomePage from '@/pages/Home'
+import LoginPage from '@/pages/Login'
 import MarketingPage from '@/pages/Marketing'
 import MorePage from '@/pages/More'
+import NotificationsPage from '@/pages/Notifications'
 import PublicBookingPage from '@/pages/PublicBooking'
+import PublicCancelPage from '@/pages/PublicCancel'
+import PublicClubPage from '@/pages/PublicClub'
 import ReportsPage from '@/pages/Reports'
 import SettingsPage from '@/pages/Settings'
 import StockPage from '@/pages/Stock'
@@ -34,6 +39,7 @@ function Tab({ to, label, icon: Icon, end }: { to: string; label: string; icon: 
 }
 
 function Shell() {
+  useEffect(() => void linkTeamDevice().catch(() => {}), [])
   const [panel, setPanel] = useState<'menu' | 'booking' | 'fitin' | 'sale' | 'block' | null>(null)
   const location = useLocation()
   return (
@@ -70,12 +76,22 @@ function OwnerOnly({ children }: { children: ReactNode }) {
   return useActor().role === 'owner' ? children : <Navigate to="/" replace />
 }
 
+function Private() {
+  const session = useSession()
+  const ready = useReady()
+  if (!session) return <LoginPage />
+  if (!ready) return <div className="grid min-h-dvh place-items-center text-sm text-muted">Abrindo…</div>
+  return <Shell />
+}
+
 export default function App() {
   return (
     <>
       <Routes>
         <Route path="/agendar" element={<PublicBookingPage />} />
-        <Route element={<Shell />}>
+        <Route path="/agendar/cancelar" element={<PublicCancelPage />} />
+        <Route path="/clube/*" element={<PublicClubPage />} />
+        <Route element={<Private />}>
           <Route index element={<HomePage />} />
           <Route path="agenda" element={<AgendaPage />} />
           <Route path="clientes" element={<ClientsPage />} />
@@ -88,6 +104,7 @@ export default function App() {
           <Route path="marketing" element={<OwnerOnly><MarketingPage /></OwnerOnly>} />
           <Route path="relatorios" element={<OwnerOnly><ReportsPage /></OwnerOnly>} />
           <Route path="config" element={<SettingsPage />} />
+          <Route path="notificacoes" element={<OwnerOnly><NotificationsPage /></OwnerOnly>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarClock, ChevronRight, Package, Receipt, Wallet } from 'lucide-react'
+import { AlertTriangle, CalendarClock, CalendarPlus, ChevronRight, Package, Receipt, ShoppingBag, Wallet, Zap } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { nowISO, useActor, useDb } from '@/data/store'
@@ -11,13 +11,17 @@ import { subscriptionMetrics } from '@/domain/subscriptions'
 import { commissionBalance } from '@/domain/team'
 import { dateKey, dayLabel, startOfMonth, timeOf, weekdayLabel } from '@/domain/time'
 import type { ID } from '@/domain/types'
+import { AlertsBell } from '@/ui/alerts'
 import { Avatar, Badge, Bars, Card, Empty, List, Row, Section, Stat } from '@/ui/kit'
-import { AppointmentSheet, STATUS_LABEL, STATUS_TONE } from '@/ui/operations'
+import { AppointmentSheet, BookingSheet, CheckoutSheet, STATUS_LABEL, STATUS_TONE } from '@/ui/operations'
+import { WhatsAppButton } from '@/ui/whatsapp'
+import { waTemplates } from '@/domain/whatsapp'
 
 export default function HomePage() {
   const db = useDb()
   const actor = useActor()
   const [openId, setOpenId] = useState<ID | null>(null)
+  const [panel, setPanel] = useState<'booking' | 'fitin' | 'sale' | null>(null)
   const now = nowISO()
   const today = dateKey(now)
   const owner = actor.role === 'owner'
@@ -35,6 +39,7 @@ export default function HomePage() {
     .slice(0, 5)
 
   const low = db.products.filter(isLowStock)
+  const birthdays = db.clients.filter((c) => c.birthday === today.slice(5))
   const pendingCommission = db.barbers.reduce((t, b) => t + Math.max(0, commissionBalance(db, b.id).pendingCents), 0)
   const club = subscriptionMetrics(db)
   const mine = actor.barberId ? commissionBalance(db, actor.barberId) : null
@@ -43,38 +48,35 @@ export default function HomePage() {
 
   return (
     <>
-      <header className="pt-safe px-4 pb-1">
-        <p className="text-sm text-muted">{weekdayLabel(today)}, {dayLabel(today)}</p>
-        <h1 className="font-display text-[28px] leading-tight font-semibold tracking-tight">{greeting}, {actor.name.split(' ')[0]}</h1>
+      <header className="pt-safe flex items-start justify-between gap-3 px-4 pb-1">
+        <img src="/logo.webp" alt="" width={48} height={48} className="rounded-xl" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm text-muted">{weekdayLabel(today)}, {dayLabel(today)}</p>
+          <h1 className="truncate font-display text-[28px] leading-tight font-semibold tracking-tight">{greeting}, {actor.name.split(' ')[0]}</h1>
+        </div>
+        <AlertsBell />
       </header>
 
-      {owner ? (
-        <div className="px-4 pt-3">
-          <Card className="p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-muted">Faturamento hoje</div>
-                <div className="tnum mt-0.5 text-[34px] leading-10 font-extrabold tracking-tight">{formatBRL(day.grossRevenue)}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-sm font-semibold text-muted">Lucro hoje</div>
-                <div className={`tnum mt-1.5 text-lg font-extrabold ${day.netProfit >= 0 ? 'text-ok' : 'text-bad'}`}>{formatBRL(day.netProfit)}</div>
-              </div>
-            </div>
-            <div className="mt-4"><Bars data={series} format={formatBRL} /></div>
-          </Card>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <Stat label="Faturamento do mês" value={formatBRL(month.grossRevenue)} hint={`Lucro ${formatBRL(month.netProfit)}`} />
-            <Stat label="Ticket médio do mês" value={formatBRL(averageTicket(db, startOfMonth(today), today))} />
-            <Stat label="Ocupação hoje" value={formatBps(occupancy(db, today, today))} />
-            <Stat label="Receita recorrente" value={formatBRL(club.mrrCents)} hint={`${club.activeCount} assinantes`} />
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-2 px-4 pt-3">
-          <Stat label="Comissão a receber" value={formatBRL(mine?.pendingCents ?? 0)} tone="ok" />
-          <Stat label="Já recebido" value={formatBRL(mine?.paidCents ?? 0)} />
-        </div>
+      <div className="grid grid-cols-3 gap-2 px-4 pt-3">
+        {[
+          { label: 'Agendar', icon: CalendarPlus, open: () => setPanel('booking') },
+          { label: 'Encaixe', icon: Zap, open: () => setPanel('fitin') },
+          { label: 'Venda', icon: ShoppingBag, open: () => setPanel('sale') },
+        ].map((q) => (
+          <button key={q.label} type="button" onClick={q.open} className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-2xl bg-surface text-sm font-bold active:bg-raised">
+            <q.icon size={20} className="text-brass" /> {q.label}
+          </button>
+        ))}
+      </div>
+
+      {birthdays.length > 0 && (
+        <Section title="Aniversariantes de hoje 🎉">
+          <List>
+            {birthdays.map((c) => (
+              <Row key={c.id} to={`/clientes/${c.id}`} left={<Avatar name={c.name} />} title={c.name} sub="Mande os parabéns" action={<WhatsAppButton compact phone={c.phone} text={waTemplates.birthday(db, c)} />} />
+            ))}
+          </List>
+        </Section>
       )}
 
       <Section title="Próximos de hoje" action={<Link to="/agenda" className="text-sm font-bold text-brass">Agenda</Link>}>
@@ -116,6 +118,40 @@ export default function HomePage() {
         </Section>
       )}
 
+      <Section title={owner ? 'Hoje em números' : 'Suas comissões'}>
+        <div className="-mx-4 -mt-3">
+      {owner ? (
+        <div className="px-4 pt-3">
+          <Card className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-muted">Faturamento hoje</div>
+                <div className="tnum mt-0.5 text-[34px] leading-10 font-extrabold tracking-tight">{formatBRL(day.grossRevenue)}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-semibold text-muted">Lucro hoje</div>
+                <div className={`tnum mt-1.5 text-lg font-extrabold ${day.netProfit >= 0 ? 'text-ok' : 'text-bad'}`}>{formatBRL(day.netProfit)}</div>
+              </div>
+            </div>
+            <div className="mt-4"><Bars data={series} format={formatBRL} /></div>
+          </Card>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <Stat label="Faturamento do mês" value={formatBRL(month.grossRevenue)} hint={`Lucro ${formatBRL(month.netProfit)}`} />
+            <Stat label="Ticket médio do mês" value={formatBRL(averageTicket(db, startOfMonth(today), today))} />
+            <Stat label="Ocupação hoje" value={formatBps(occupancy(db, today, today))} />
+            <Stat label="Receita recorrente" value={formatBRL(club.mrrCents)} hint={`${club.activeCount} assinantes`} />
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2 px-4 pt-3">
+          <Stat label="Comissão a receber" value={formatBRL(mine?.pendingCents ?? 0)} tone="ok" />
+          <Stat label="Já recebido" value={formatBRL(mine?.paidCents ?? 0)} />
+        </div>
+      )}
+
+        </div>
+      </Section>
+
       {owner && (
         <div className="grid grid-cols-2 gap-2 px-4 pt-5">
           <Link to="/financeiro"><Card className="flex items-center gap-2.5 p-3.5 font-bold active:bg-raised"><Receipt size={19} className="text-brass" /> Caixa</Card></Link>
@@ -124,6 +160,9 @@ export default function HomePage() {
       )}
 
       {openId && <AppointmentSheet id={openId} onClose={() => setOpenId(null)} />}
+      {panel === 'booking' && <BookingSheet onClose={() => setPanel(null)} />}
+      {panel === 'fitin' && <BookingSheet initial={{ fitIn: true }} onClose={() => setPanel(null)} />}
+      {panel === 'sale' && <CheckoutSheet onClose={() => setPanel(null)} />}
     </>
   )
 }

@@ -1,5 +1,7 @@
 import { Check, Clock, Plus, Search, Trash2, UserPlus, Zap } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { waTemplates } from '@/domain/whatsapp'
+import { WhatsAppButton } from './whatsapp'
 import { Link } from 'react-router-dom'
 import { exec, getCtx, nowISO, useActor, useDb } from '@/data/store'
 import {
@@ -38,6 +40,15 @@ export function ClientPicker({ value, onChange }: { value: ID | null; onChange: 
   const selected = db.clients.find((c) => c.id === value)
   const term = q.trim().toLowerCase()
   const digits = term.replace(/\D/g, '')
+  // Quem marcou por último aparece primeiro: na maioria das vezes é um desses.
+  const recent = useMemo(() => {
+    const seen = new Set<ID>()
+    for (const a of [...db.appointments].sort((x, y) => y.createdAt.localeCompare(x.createdAt))) {
+      seen.add(a.clientId)
+      if (seen.size >= 6) break
+    }
+    return [...seen].map((id) => db.clients.find((c) => c.id === id)).filter((c) => c !== undefined)
+  }, [db.appointments, db.clients])
   const results = term
     ? db.clients.filter((c) => c.name.toLowerCase().includes(term) || (digits.length >= 3 && c.phone.includes(digits))).slice(0, 5)
     : []
@@ -80,6 +91,15 @@ export function ClientPicker({ value, onChange }: { value: ID | null; onChange: 
         <Search size={18} className="absolute top-1/2 left-3.5 -translate-y-1/2 text-muted" />
         <Input className="pl-10" placeholder="Nome ou celular" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar cliente" />
       </div>
+      {!term && recent.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {recent.map((c) => (
+            <button key={c.id} type="button" onClick={() => onChange(c.id)} className="min-h-10 rounded-xl bg-raised px-3 text-sm font-semibold active:brightness-125">
+              {c.name.split(' ').slice(0, 2).join(' ')}
+            </button>
+          ))}
+        </div>
+      )}
       {results.length > 0 && (
         <div className="divide-y divide-line/70 overflow-hidden rounded-xl bg-raised">
           {results.map((c) => <Row key={c.id} title={c.name} sub={c.phone} onClick={() => onChange(c.id)} />)}
@@ -182,7 +202,7 @@ export function BookingSheet({ onClose, initial }: {
       title={fitIn ? 'Encaixe' : 'Novo agendamento'}
       onClose={onClose}
       footer={
-        <Button variant="primary" block disabled={!canSave} onClick={save}>
+        <Button variant="primary" block disabled={!canSave || (!fitIn && !!start && duration > 0 && !slots.includes(start))} onClick={save}>
           {start ? `Marcar às ${timeOf(start)}` : 'Escolha um horário'}
           {serviceIds.length > 0 && ` · ${formatBRL(priceOf(db, serviceIds))}`}
         </Button>
@@ -231,6 +251,9 @@ export function BookingSheet({ onClose, initial }: {
           {duration > 0 && (
             <div>
               <span className="mb-1.5 block text-[13px] font-bold text-muted">Horário ({duration} min)</span>
+              {start && !slots.includes(start) && (
+                <p className="mb-2 rounded-xl bg-warn/15 p-2.5 text-sm text-warn">O horário das {timeOf(start)} não comporta {duration} min. Escolha outro abaixo.</p>
+              )}
               <SlotGrid slots={slots} value={start} onPick={setStart} />
               {slots.length === 0 && clientId && (
                 <Button
@@ -308,6 +331,15 @@ export function AppointmentSheet({ id, onClose }: { id: ID; onClose: () => void 
         {a.notes && <p className="mt-2 text-sm text-muted">{a.notes}</p>}
         {client?.notes && <p className="mt-2 text-sm text-warn">{client.notes}</p>}
       </div>
+      {client && (
+        <WhatsAppButton
+          className="w-full"
+          phone={client.phone}
+          text={a.status === 'completed' ? waTemplates.thanks(db, client) : a.status === 'scheduled' ? waTemplates.confirm(db, client, a) : waTemplates.reminder(db, client, a)}
+        >
+          {a.status === 'completed' ? 'Agradecer no WhatsApp' : a.status === 'scheduled' ? 'Confirmar no WhatsApp' : 'Lembrar no WhatsApp'}
+        </WhatsAppButton>
+      )}
       {closable && (
         <div className="grid grid-cols-2 gap-2">
           {canTransition(a.status, 'confirmed') && <Button onClick={() => set('confirmed', 'Confirmado')}>Confirmar</Button>}
@@ -362,8 +394,9 @@ export function CheckoutSheet({ appointment, onClose, onBack }: { appointment?: 
   const [clientId, setClientId] = useState<ID | null>(appointment?.clientId ?? null)
   const [barberId, setBarberId] = useState<ID | null>(appointment?.barberId ?? actor.barberId ?? db.barbers.find((b) => b.active)?.id ?? null)
   const [items, setItems] = useState<CheckoutItem[]>(appointment?.serviceIds.map((refId) => ({ kind: 'service', refId, qty: 1 })) ?? [])
-  const [coupon, setCoupon] = useState('')
-  const [appliedCoupon, setAppliedCoupon] = useState('')
+  const fromQr = appointment?.notes.match(/Cupom: (\S+)/)?.[1] ?? ''
+  const [coupon, setCoupon] = useState(fromQr)
+  const [appliedCoupon, setAppliedCoupon] = useState(fromQr)
   const [manual, setManual] = useState(0)
   const client = db.clients.find((c) => c.id === clientId)
   const sub = activeSubscription(db, clientId)

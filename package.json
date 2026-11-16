@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:gmail": "node --env-file=.env.local scripts/test-gmail.mjs",
     "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
@@ -19,9 +18,11 @@
     "idb-keyval": "^6.3.0",
     "immer": "^11.2.9",
     "lucide-react": "^1.69.0",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-router-dom": "^7.18.5"
+    "react-router-dom": "^7.18.5",
+    "worker-mailer": "^1.3.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.15",

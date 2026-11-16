@@ -254,13 +254,16 @@ export interface Subscription {
   id: ID
   clientId: ID
   planId: ID
-  status: 'active' | 'past_due' | 'cancelled'
+  /** pending = aguardando o primeiro pagamento online. */
+  status: 'pending' | 'active' | 'past_due' | 'cancelled'
   startedAt: ISO
   periodStart: DateKey
   periodEnd: DateKey
   usedVisits: number
   autoRenew: boolean
   cancelledAt: ISO | null
+  /** Cobrança automática no cartão pelo Asaas: checkout pago e a assinatura criada lá. */
+  gateway?: { provider: 'asaas'; checkoutId: string | null; externalId: string | null }
 }
 
 export interface SubscriptionCharge {
@@ -275,6 +278,10 @@ export interface SubscriptionCharge {
   method: PaymentMethod | null
   feeCents: Cents
   commissionClosed: boolean
+  /** Pagamento no Asaas que quitou esta cobrança. Evita contar o mesmo aviso duas vezes. */
+  gatewayPaymentId?: string | null
+  /** Estornado no Asaas: o valor já saiu da receita. */
+  gatewayRefunded?: boolean
 }
 
 export interface Coupon {
@@ -317,6 +324,9 @@ export type MessageKind =
   | 'charge_due'
   | 'charge_overdue'
   | 'low_stock'
+  | 'new_booking'
+  | 'club_welcome'
+  | 'new_subscriber'
 
 export interface Message {
   id: ID
@@ -328,10 +338,12 @@ export interface Message {
   body: string
   /** Garante que automações rodem várias vezes sem mandar em dobro. */
   dedupeKey: string
-  status: 'queued' | 'sent' | 'failed'
+  status: 'queued' | 'sending' | 'sent' | 'failed'
   createdAt: ISO
   sentAt: ISO | null
   error: string | null
+  attempts?: number
+  claimedAt?: ISO | null
 }
 
 export interface AuditEntry {
@@ -374,7 +386,7 @@ export function emptyState(): DbState {
   return {
     schemaVersion: SCHEMA_VERSION,
     settings: {
-      shopName: 'Samuel Barbearia',
+      shopName: 'Samuel Barber Shop',
       phone: '',
       address: '',
       slug: 'samuel',

@@ -1,3 +1,5 @@
+import { waTemplates } from '@/domain/whatsapp'
+import { WhatsAppButton } from '@/ui/whatsapp'
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
 import { exec, useDb } from '@/data/store'
@@ -88,6 +90,16 @@ function ChargeSheet({ chargeId, onClose }: { chargeId: ID; onClose: () => void 
   const [method, setMethod] = useState<PaymentMethod>('pix')
   const charge = db.charges.find((c) => c.id === chargeId)
   if (!charge) return null
+  const automatic = db.subscriptions.find((s) => s.id === charge.subscriptionId)?.gateway
+  if (automatic) {
+    return (
+      <Sheet title="Cobrança automática" onClose={onClose}>
+        <p className="text-sm text-muted">
+          Esta mensalidade é cobrada no cartão pelo Asaas no vencimento. Ela é marcada como paga sozinha, assim que o pagamento for aprovado. Se o cartão recusar, a assinatura fica em atraso depois da tolerância configurada.
+        </p>
+      </Sheet>
+    )
+  }
   return (
     <Sheet
       title="Receber mensalidade"
@@ -118,8 +130,13 @@ export default function ClubPage() {
   const [chargeId, setChargeId] = useState<ID | null>(null)
   const [cancelId, setCancelId] = useState<ID | null>(null)
   const m = subscriptionMetrics(db)
+  const clubInvite = `Conheça o clube da ${db.settings.shopName} 👑\n\nVisual sempre em dia com mensalidade fixa e cobrança automática no cartão:\n👉 ${location.origin}/clube`
   const members = db.subscriptions.filter((s) => s.status !== 'cancelled')
   const open = db.charges.filter((c) => c.status === 'pending').sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+  const clientOf = (subscriptionId: ID) => {
+    const s = db.subscriptions.find((x) => x.id === subscriptionId)
+    return db.clients.find((c) => c.id === s?.clientId)
+  }
   const nameOf = (subscriptionId: ID) => {
     const s = db.subscriptions.find((x) => x.id === subscriptionId)
     return db.clients.find((c) => c.id === s?.clientId)?.name ?? ''
@@ -135,6 +152,15 @@ export default function ClubPage() {
       <div className="grid grid-cols-2 gap-2 px-4">
         <Stat label="Receita recorrente" value={formatBRL(m.mrrCents)} hint="Por mês" tone="ok" />
         <Stat label="Assinantes ativos" value={String(m.activeCount)} hint={m.pastDueCount ? `${m.pastDueCount} em atraso` : 'Nenhum em atraso'} />
+      </div>
+      <div className="px-4 pt-2">
+        <Card className="space-y-2 p-3.5">
+          <div className="text-sm font-bold">Assinatura online com cartão</div>
+          <p className="text-[13px] text-muted">Envie o link: o cliente escolhe o plano e cadastra o cartão no Asaas, sem precisar criar conta. A cobrança se repete todo mês sozinha.</p>
+          <a href={`https://wa.me/?text=${encodeURIComponent(clubInvite)}`} target="_blank" rel="noreferrer" className="block">
+            <Button variant="primary" block tabIndex={-1}>Enviar link no WhatsApp</Button>
+          </a>
+        </Card>
       </div>
       <div className="px-4 pt-3">
         <Segmented
@@ -157,7 +183,13 @@ export default function ClubPage() {
                     left={<Avatar name={client?.name ?? '?'} />}
                     title={client?.name}
                     sub={`${p?.name} · ${p?.visitsPerCycle === null ? `${s.usedVisits} visitas` : `${s.usedVisits}/${p?.visitsPerCycle}`} · ${s.autoRenew ? 'renova' : 'termina'} ${brDate(s.periodEnd).slice(0, 5)}`}
-                    right={s.status === 'past_due' ? <Badge tone="bad">Em atraso</Badge> : s.autoRenew ? <Badge tone="ok">Ativa</Badge> : <Badge tone="warn">Encerrando</Badge>}
+                    right={
+                      s.status === 'pending' ? <Badge tone="info">Aguardando pagamento</Badge>
+                        : s.status === 'past_due' ? <Badge tone="bad">Em atraso</Badge>
+                        : !s.autoRenew ? <Badge tone="warn">Encerrando</Badge>
+                        : s.gateway ? <Badge tone="ok">Cartão automático</Badge>
+                        : <Badge tone="ok">Ativa</Badge>
+                    }
                     onClick={() => setCancelId(s.id)}
                   />
                 )
@@ -171,11 +203,22 @@ export default function ClubPage() {
         <div className="px-4 pt-3">
           {open.length === 0 ? <Empty title="Nenhuma cobrança em aberto" /> : (
             <List>
-              {open.map((c) => <Row key={c.id} title={nameOf(c.subscriptionId)} sub={`Vence ${brDate(c.dueDate)}`} right={formatBRL(c.amountCents)} onClick={() => setChargeId(c.id)} />)}
+              {open.map((c) => {
+                const client = clientOf(c.subscriptionId)
+                return (
+                  <Row
+                    key={c.id}
+                    title={nameOf(c.subscriptionId)}
+                    sub={`Vence ${brDate(c.dueDate)} · ${formatBRL(c.amountCents)}`}
+                    onClick={() => setChargeId(c.id)}
+                    action={client ? <WhatsAppButton compact phone={client.phone} text={waTemplates.charge(db, client, c.amountCents)} /> : undefined}
+                  />
+                )
+              })}
             </List>
           )}
           <Card className="mt-2 p-3.5 text-sm text-muted">
-            A renovação e a cobrança são geradas sozinhas. O recebimento ainda é confirmado aqui, até ligarmos um gateway de pagamento.
+            Assinaturas com cartão automático se quitam sozinhas pelo Asaas. As cobranças das assinaturas feitas no balcão são confirmadas aqui.
           </Card>
         </div>
       )}

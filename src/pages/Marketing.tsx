@@ -1,4 +1,5 @@
-import { Mail, Plus, Send } from 'lucide-react'
+import { QrSheet } from '@/ui/qr'
+import { Mail, Plus, QrCode, Send } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { exec, nowISO, useDb } from '@/data/store'
 import { audienceOf, sendCampaign, upsertCoupon } from '@/domain/marketing'
@@ -6,7 +7,7 @@ import { formatBps, formatBRL } from '@/domain/money'
 import { addDays, brDate, dateKey, dayLabel, timeOf } from '@/domain/time'
 import type { CampaignAudience, Coupon, ID, MessageKind } from '@/domain/types'
 import {
-  attempt, Badge, Button, Card, Chips, Empty, Field, Input, List, MoneyInput, PageHeader, PercentInput, Row, Section, Segmented, Select, Sheet, Textarea, Toggle,
+  attempt, Badge, Button, Card, Chips, Empty, Field, IconButton, Input, List, MoneyInput, PageHeader, PercentInput, Row, Section, Segmented, Select, Sheet, Textarea, Toggle,
 } from '@/ui/kit'
 
 const AUDIENCES: { value: CampaignAudience; label: string }[] = [
@@ -19,7 +20,7 @@ const AUDIENCES: { value: CampaignAudience; label: string }[] = [
 const KIND_LABEL: Record<MessageKind, string> = {
   booking_confirmation: 'Confirmação', reminder_24h: 'Lembrete 24h', reminder_2h: 'Lembrete 2h', cancellation: 'Cancelamento',
   waitlist_slot: 'Lista de espera', welcome: 'Boas-vindas', birthday: 'Aniversário', recovery: 'Recuperação', campaign: 'Campanha',
-  charge_due: 'Mensalidade', charge_overdue: 'Atraso', low_stock: 'Estoque baixo',
+  charge_due: 'Mensalidade', charge_overdue: 'Atraso', low_stock: 'Estoque baixo', new_booking: 'Novo agendamento', club_welcome: 'Clube: boas-vindas', new_subscriber: 'Novo assinante',
 }
 
 function CouponForm({ coupon, onClose }: { coupon?: Coupon; onClose: () => void }) {
@@ -96,9 +97,10 @@ export default function MarketingPage() {
   const [tab, setTab] = useState<'coupons' | 'campaigns' | 'outbox'>('coupons')
   const [coupon, setCoupon] = useState<Coupon | 'new' | null>(null)
   const [campaign, setCampaign] = useState(false)
+  const [qrCoupon, setQrCoupon] = useState<Coupon | null>(null)
   const today = dateKey(nowISO())
   const outbox = useMemo(() => [...db.messages].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 60), [db.messages])
-  const queued = db.messages.filter((m) => m.status === 'queued').length
+  const queued = db.messages.filter((m) => m.status === 'queued' || m.status === 'sending').length
   return (
     <>
       <PageHeader back title="Marketing" sub="Cupons, campanhas e mensagens" />
@@ -119,6 +121,7 @@ export default function MarketingPage() {
                     sub={`${c.type === 'percent' ? formatBps(c.value) : formatBRL(c.value)} · ${c.uses}${c.maxUses ? `/${c.maxUses}` : ''} usos · até ${brDate(c.validTo)}`}
                     right={!c.active ? <Badge>Inativo</Badge> : expired ? <Badge tone="bad">Vencido</Badge> : <Badge tone="ok">Ativo</Badge>}
                     onClick={() => setCoupon(c)}
+                    action={c.active && !expired ? <IconButton label={`QR do cupom ${c.code}`} className="size-10" onClick={() => setQrCoupon(c)}><QrCode size={18} /></IconButton> : undefined}
                   />
                 )
               })}
@@ -143,7 +146,7 @@ export default function MarketingPage() {
         <>
           <div className="px-4 pt-3">
             <Card className="p-3.5 text-sm text-muted">
-              <b className="text-ink">{queued} na fila.</b> Lembretes, aniversários, boas-vindas e recuperação são gerados sozinhos. O envio real começa quando o Gmail e o OneSignal forem conectados. Lembretes têm prioridade: campanhas grandes saem aos poucos, em vários dias.
+              <b className="text-ink">{queued} na fila.</b> Lembretes, aniversários, boas-vindas e recuperação saem sozinhos. Lembretes têm prioridade: campanhas grandes saem aos poucos, em vários dias.
             </Card>
           </div>
           <div className="px-4 pt-2">
@@ -166,6 +169,14 @@ export default function MarketingPage() {
 
       {coupon && <CouponForm coupon={coupon === 'new' ? undefined : coupon} onClose={() => setCoupon(null)} />}
       {campaign && <CampaignForm onClose={() => setCampaign(false)} />}
+      {qrCoupon && (
+        <QrSheet
+          text={`${location.origin}/agendar?cupom=${encodeURIComponent(qrCoupon.code)}`}
+          title={qrCoupon.type === 'percent' ? `${formatBps(qrCoupon.value)} de desconto` : `${formatBRL(qrCoupon.value)} de desconto`}
+          caption={`Agende pelo QR e use o cupom ${qrCoupon.code}`}
+          onClose={() => setQrCoupon(null)}
+        />
+      )}
     </>
   )
 }

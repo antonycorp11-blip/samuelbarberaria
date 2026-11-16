@@ -68,6 +68,25 @@ describe('automações', () => {
   })
 })
 
+describe('limpeza', () => {
+  it('apaga mensagens resolvidas há mais de 90 dias, e nada mais', () => {
+    const { w, joao } = setup()
+    const old = { channel: 'email' as const, to: 'a@b.com', clientId: joao, kind: 'welcome' as const, subject: 's', body: 'b', sentAt: null, error: null }
+    w.state = {
+      ...w.state,
+      messages: [
+        { ...old, id: 'm1', dedupeKey: 'k1', status: 'sent', createdAt: '2025-11-01T12:00:00.000Z' },
+        { ...old, id: 'm2', dedupeKey: 'k2', status: 'queued', createdAt: '2025-11-01T12:00:00.000Z' },
+        { ...old, id: 'm3', dedupeKey: 'k3', status: 'sent', createdAt: '2026-02-20T12:00:00.000Z' },
+      ],
+    }
+    const clients = w.state.clients.length
+    w.do(runAutomations, undefined)
+    expect(w.state.messages.map((m) => m.id).filter((id) => id.startsWith('m'))).toEqual(['m2', 'm3'])
+    expect(w.state.clients.length).toBe(clients)
+  })
+})
+
 describe('indicadores de clientes', () => {
   it('calcula frequência e previsão de retorno', () => {
     const ctx = setup()

@@ -23,8 +23,3 @@ jobs:
           path: backup-*.sql.gz.enc
           retention-days: 90
           if-no-files-found: error
-      - name: Manter o projeto ativo
-        run: |
-          curl --fail --silent --output /dev/null \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-            "${{ secrets.SUPABASE_URL }}/rest/v1/settings?select=id&limit=1"

@@ -178,8 +178,20 @@ export function Avatar({ name, size = 40 }: { name: string; size?: number }) {
 }
 
 export function Row({
-  title, sub, right, left, onClick, to,
-}: { title: ReactNode; sub?: ReactNode; right?: ReactNode; left?: ReactNode; onClick?: () => void; to?: string }) {
+  title, sub, right, left, onClick, to, action,
+}: {
+  title: ReactNode; sub?: ReactNode; right?: ReactNode; left?: ReactNode; onClick?: () => void; to?: string
+  /** Botão ao lado da linha, como o WhatsApp: tocar nele não abre a linha. */
+  action?: ReactNode
+}) {
+  if (action) {
+    return (
+      <div className="flex items-center pr-3">
+        <div className="min-w-0 flex-1"><Row title={title} sub={sub} right={right} left={left} onClick={onClick} to={to} /></div>
+        {action}
+      </div>
+    )
+  }
   const body = (
     <>
       {left}
@@ -343,10 +355,68 @@ export function Toggle({ checked, onChange, label, hint }: { checked: boolean; o
 
 /* ---------- folha inferior ---------- */
 
+/*
+ * Botão voltar do celular fecha a folha de cima, em vez de sair do app.
+ * Cada folha aberta ganha uma entrada no histórico; fechar pelo X remove essa entrada.
+ */
+const openSheets: number[] = []
+const sheetClosers = new Map<number, () => void>()
+let sheetSeq = 0
+let ignoredPops = 0
+/** Entrada de uma folha recém-fechada, ainda no histórico. Uma folha que abre logo em seguida a reaproveita. */
+let releasing: number | null = null
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('popstate', () => {
+    if (ignoredPops > 0) {
+      ignoredPops -= 1
+      return
+    }
+    const top = openSheets[openSheets.length - 1]
+    if (top !== undefined) sheetClosers.get(top)?.()
+  })
+}
+
+const currentSheet = () => (history.state as { sheet?: number } | null)?.sheet
+
+function useBackButtonClose(close: () => void) {
+  const closeRef = useRef(close)
+  closeRef.current = close
+  useEffect(() => {
+    const id = ++sheetSeq
+    openSheets.push(id)
+    sheetClosers.set(id, () => closeRef.current())
+    // Uma folha abrindo outra (o menu + abrindo o agendamento) troca de entrada, sem empilhar nem perder.
+    if (releasing !== null && currentSheet() === releasing) {
+      releasing = null
+      history.replaceState({ ...(history.state as object | null), sheet: id }, '')
+    } else {
+      history.pushState({ ...(history.state as object | null), sheet: id }, '')
+    }
+    return () => {
+      openSheets.splice(openSheets.indexOf(id), 1)
+      sheetClosers.delete(id)
+      // Fechou pelo X ou ao concluir: a entrada desta folha sai do histórico, salvo se outra folha a reaproveitar.
+      if (currentSheet() === id) {
+        releasing = id
+        setTimeout(() => {
+          if (releasing !== id) return
+          releasing = null
+          if (currentSheet() === id) {
+            ignoredPops += 1
+            history.back()
+          }
+        }, 0)
+      }
+    }
+  }, [])
+}
+
 export function Sheet({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
   const panel = useRef<HTMLDivElement>(null)
   const closeRef = useRef(onClose)
   closeRef.current = onClose
+  useBackButtonClose(onClose)
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null

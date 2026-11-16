@@ -6,23 +6,25 @@ import { initPush } from '@/integrations/push'
 import App from './App'
 import './index.css'
 
-initPush()
+void initPush()
 
 const root = createRoot(document.getElementById('root') as HTMLElement)
 
 root.render(
-  <div className="grid min-h-dvh place-items-center text-sm text-muted">Preparando a barbearia…</div>,
+  <div className="grid min-h-dvh place-items-center">
+    <img src="/logo.webp" alt="Abrindo" width={120} height={120} className="rounded-3xl" />
+  </div>,
 )
 
 // Deixa a tela de abertura pintar antes do trabalho pesado do primeiro acesso.
 setTimeout(() => {
-  void bootstrap().then(() =>
+  void bootstrap().then(() => {
     root.render(
       <StrictMode>
         <BrowserRouter>
           <App />
         </BrowserRouter>
       </StrictMode>,
-    ),
-  )
+    )
+  })
 }, 30)

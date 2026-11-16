@@ -1,6 +1,6 @@
 import { Plus, Trophy } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { exec, nowISO, useActor, useDb } from '@/data/store'
+import { api, exec, nowISO, useActor, useDb } from '@/data/store'
 import { METHOD_LABEL } from '@/domain/finance'
 import { formatBps, formatBRL } from '@/domain/money'
 import { barberRanking } from '@/domain/reports'
@@ -8,7 +8,7 @@ import { commissionBalance, payCommissions, upsertBarber } from '@/domain/team'
 import { dateKey, dayLabel, startOfMonth, weekdayNames } from '@/domain/time'
 import type { Barber, ID, PaymentMethod } from '@/domain/types'
 import {
-  attempt, Avatar, Badge, Button, Card, Chips, cx, Empty, Field, IconButton, Input, List, Meter, PageHeader, PercentInput, Row, Section, Sheet, Stat, Toggle,
+  attempt, Avatar, Badge, Button, Card, Chips, cx, Empty, Field, IconButton, Input, List, Meter, PageHeader, PercentInput, Row, Section, Sheet, Stat, toast, Toggle,
 } from '@/ui/kit'
 
 const METHODS = (Object.keys(METHOD_LABEL) as PaymentMethod[]).map((value) => ({ value, label: METHOD_LABEL[value] }))
@@ -66,6 +66,28 @@ function BarberForm({ barber, onClose }: { barber?: Barber; onClose: () => void 
   )
 }
 
+function StaffAccess({ barberId, name, initialEmail }: { barberId: ID; name: string; initialEmail: string }) {
+  const [email, setEmail] = useState(initialEmail)
+  const [password, setPassword] = useState('')
+  const save = async () => {
+    try {
+      await api('/api/staff', { method: 'POST', body: JSON.stringify({ email, password, barberId, name }) })
+      setPassword('')
+      toast.ok('Acesso salvo')
+    } catch (e) {
+      toast.bad(e instanceof Error ? e.message : 'Não foi possível salvar.')
+    }
+  }
+  return (
+    <div className="space-y-2 rounded-xl bg-raised p-3">
+      <span className="block text-[13px] font-bold text-muted">Acesso ao app</span>
+      <Input type="email" autoCapitalize="none" autoComplete="off" placeholder="E-mail de login" value={email} onChange={(e) => setEmail(e.target.value)} />
+      <Input type="password" autoComplete="new-password" placeholder="Nova senha (mín. 8)" value={password} onChange={(e) => setPassword(e.target.value)} />
+      <Button block disabled={!email || password.length < 8} onClick={() => void save()}>Salvar acesso</Button>
+    </div>
+  )
+}
+
 function BarberSheet({ id, onClose, onEdit }: { id: ID; onClose: () => void; onEdit: () => void }) {
   const db = useDb()
   const actor = useActor()
@@ -114,6 +136,7 @@ function BarberSheet({ id, onClose, onEdit }: { id: ID; onClose: () => void; onE
           </div>
         </div>
       )}
+      {owner && barber && <StaffAccess barberId={id} name={barber.name} initialEmail={barber.email} />}
       {owner && <Button block onClick={onEdit}>Editar cadastro</Button>}
     </Sheet>
   )

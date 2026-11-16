@@ -4,8 +4,9 @@ import { exec, nowISO, useActor, useDb } from '@/data/store'
 import { appointmentsOn, OCCUPYING, priceOf, removeBlock, removeFromWaitlist, workWindow } from '@/domain/agenda'
 import { formatBRL } from '@/domain/money'
 import { occupancy } from '@/domain/reports'
-import { addDays, dateKey, dayLabel, minutesOf, startOfWeek, timeFromMinutes, timeOf, weekdayLabel } from '@/domain/time'
+import { addDays, dateKey, dayLabel, minutesOf, startOfWeek, timeFromMinutes, timeOf, toISO, weekdayLabel } from '@/domain/time'
 import type { DateKey, DbState, ID, ISO } from '@/domain/types'
+import { AlertsBell } from '@/ui/alerts'
 import { attempt, Badge, Button, Card, Chips, ConfirmSheet, cx, Empty, IconButton, List, Meter, PageHeader, Row, Section, Segmented } from '@/ui/kit'
 import { AppointmentSheet, BlockSheet, BookingSheet, STATUS_LABEL } from '@/ui/operations'
 
@@ -26,7 +27,7 @@ function dayRange(db: DbState, date: DateKey) {
 }
 
 function DayGrid({ date, barberIds, onOpen, onEmpty, onBlock }: {
-  date: DateKey; barberIds: ID[]; onOpen: (id: ID) => void; onEmpty: (barberId: ID) => void; onBlock: (id: ID) => void
+  date: DateKey; barberIds: ID[]; onOpen: (id: ID) => void; onEmpty: (barberId: ID, time: string) => void; onBlock: (id: ID) => void
 }) {
   const db = useDb()
   const { open, close, closed } = dayRange(db, date)
@@ -72,7 +73,11 @@ function DayGrid({ date, barberIds, onOpen, onEmpty, onBlock }: {
               <div
                 key={b.id}
                 className="relative min-w-0 flex-1"
-                onClick={() => onEmpty(b.id)}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const minute = open + (e.clientY - rect.top) / PX
+                  onEmpty(b.id, timeFromMinutes(Math.max(open, Math.floor(minute / 15) * 15)))
+                }}
               >
                 {!win && <div className="hatch absolute inset-0 rounded-lg" />}
                 {win && b.breakStart && b.breakEnd && (
@@ -183,6 +188,7 @@ export default function AgendaPage() {
         sub={view === 'day' ? `${weekdayLabel(date)}, ${dayLabel(date)}` : `Semana de ${dayLabel(weekStart)}`}
         action={
           <div className="flex gap-2">
+            <AlertsBell />
             <IconButton label="Bloquear horário" onClick={() => setBlocking(true)}><Ban size={19} /></IconButton>
             <IconButton label="Novo agendamento" className="bg-brass text-brass-ink" onClick={() => setBooking({ date })}><Plus size={21} /></IconButton>
           </div>
@@ -210,7 +216,7 @@ export default function AgendaPage() {
           barberIds={barberIds}
           onOpen={setOpenId}
           onBlock={setBlockId}
-          onEmpty={(barberId) => setBooking({ barberId, date })}
+          onEmpty={(barberId, time) => setBooking({ barberId, date, start: toISO(date, time) })}
         />
       ) : (
         <WeekList start={weekStart} barberIds={barberIds} onPick={(d) => { setDate(d); setView('day') }} />

@@ -2,11 +2,17 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   X-Robots-Tag: noindex
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=()
+  Strict-Transport-Security: max-age=31536000
 
 /sw.js
   Cache-Control: no-cache
 
 /index.html
+  Cache-Control: no-cache
+
+/push/onesignal/OneSignalSDKWorker.js
   Cache-Control: no-cache
 
 /manifest.webmanifest

@@ -1,3 +1,4 @@
+import { current } from 'immer'
 import { audit, base, must, requireOwner, type Command, type Ctx } from './engine'
 import { fail } from './errors'
 import { chargeMessage, enqueue } from './messages'
@@ -21,16 +22,18 @@ export const upsertPlan: Command<Omit<Plan, 'id' | 'active'> & { id?: ID; active
   return id
 }
 
-function createCharge(d: DbState, ctx: Ctx, sub: Subscription, amountCents: Cents): SubscriptionCharge {
+export function createCharge(
+  d: DbState, ctx: Ctx, sub: Subscription, amountCents: Cents, period = { start: sub.periodStart, end: sub.periodEnd },
+): SubscriptionCharge {
   const charge: SubscriptionCharge = {
-    id: ctx.id(), subscriptionId: sub.id, periodStart: sub.periodStart, periodEnd: sub.periodEnd, amountCents,
-    dueDate: sub.periodStart, status: 'pending', paidAt: null, method: null, feeCents: 0, commissionClosed: false,
+    id: ctx.id(), subscriptionId: sub.id, periodStart: period.start, periodEnd: period.end, amountCents,
+    dueDate: period.start, status: 'pending', paidAt: null, method: null, feeCents: 0, commissionClosed: false,
   }
   d.charges.push(charge)
   return charge
 }
 
-function settleCharge(d: DbState, ctx: Ctx, charge: SubscriptionCharge, method: PaymentMethod) {
+export function settleCharge(d: DbState, ctx: Ctx, charge: SubscriptionCharge, method: PaymentMethod) {
   const s = base(d)
   charge.status = 'paid'
   charge.paidAt = ctx.now
@@ -54,7 +57,7 @@ export const subscribe: Command<{ clientId: ID; planId: ID; payWith?: PaymentMet
   must(s.clients.find((c) => c.id === i.clientId), 'Cliente')
   const plan = must(s.plans.find((p) => p.id === i.planId), 'Plano')
   if (!plan.active) fail('inactive_plan', 'Plano inativo.')
-  if (s.subscriptions.some((x) => x.clientId === i.clientId && x.status !== 'cancelled')) {
+  if (s.subscriptions.some((x) => x.clientId === i.clientId && x.status !== 'cancelled' && x.status !== 'pending')) {
     fail('already_subscribed', 'Este cliente já tem assinatura.')
   }
   const start = dateKey(ctx.now)
@@ -121,15 +124,19 @@ export function renewIfDue(d: DbState, ctx: Ctx, sub: Subscription, today: DateK
     sub.periodStart = sub.periodEnd
     sub.periodEnd = nextEnd
     sub.usedVisits = 0
+    // O cartão pode ter pago este mês antes da renovação rodar: aí não nasce outra cobrança.
+    if (d.charges.some((c) => c.subscriptionId === sub.id && c.periodStart === sub.periodStart && c.status !== 'void')) continue
     const charge = createCharge(d, ctx, sub, plan.priceCents)
     const client = base(d).clients.find((c) => c.id === sub.clientId)
-    if (client) enqueue(d, ctx, chargeMessage('charge_due', client, charge.id, charge.amountCents, charge.dueDate))
+    // No cartão automático, quem cobra e avisa é o próprio Asaas.
+    if (client && !sub.gateway) enqueue(d, ctx, chargeMessage('charge_due', client, charge.id, charge.amountCents, charge.dueDate))
   }
 }
 
 export function markOverdue(d: DbState, ctx: Ctx, today: DateKey, seen?: Set<string>) {
   const s = base(d)
-  for (const charge of s.charges) {
+  // Lê a lista atual: a renovação que acabou de rodar pode ter criado cobranças.
+  for (const charge of current(d.charges)) {
     if (charge.status !== 'pending') continue
     if (addDays(charge.dueDate, s.settings.subscriptionGraceDays) >= today) continue
     const sub = d.subscriptions.find((x) => x.id === charge.subscriptionId)

@@ -11,14 +11,14 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg', 'apple-touch-icon.png'],
+      includeAssets: ['apple-touch-icon.png'],
       manifest: {
-        name: 'Samuel Barbearia',
+        name: 'Samuel Barber Shop',
         short_name: 'Samuel',
         description: 'Gestão da barbearia: agenda, caixa, equipe e clientes.',
         lang: 'pt-BR',
-        theme_color: '#100e0c',
-        background_color: '#100e0c',
+        theme_color: '#000000',
+        background_color: '#000000',
         display: 'standalone',
         start_url: '/',
         icons: [
@@ -27,7 +27,12 @@ export default defineConfig({
           { src: 'icon-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: { navigateFallback: '/index.html', globPatterns: ['**/*.{js,css,html,svg,png,woff2}'] },
+      workbox: {
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//, /^\/push\//],
+        globPatterns: ['**/*.{js,css,html,webp,woff2}', 'icon-192.png', 'apple-touch-icon.png'],
+        globIgnores: ['push/**'],
+      },
     }),
   ],
   test: { include: ['tests/**/*.test.ts'], environment: 'node', testTimeout: 60000, hookTimeout: 60000 },

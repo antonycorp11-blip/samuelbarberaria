@@ -1,13 +1,14 @@
-import { Download, Plus, Upload } from 'lucide-react'
-import { useRef, useState } from 'react'
-import { exec, getState, replaceState, resetTo, setActor, useActor, useDb } from '@/data/store'
+import { Download, Plus } from 'lucide-react'
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { api, exec, getState, logout, useActor, useDb } from '@/data/store'
 import { updateSettings, upsertService } from '@/domain/catalog'
 import { formatBRL } from '@/domain/money'
 import { weekdayNames } from '@/domain/time'
-import type { DbState, PaymentMethod, Service } from '@/domain/types'
+import type { PaymentMethod, Service } from '@/domain/types'
 import { METHOD_LABEL } from '@/domain/finance'
 import {
-  attempt, Badge, Button, Card, Chips, ConfirmSheet, Field, Input, List, MoneyInput, PageHeader, PercentInput, Row, Section, Sheet, toast, Toggle,
+  attempt, Badge, Button, Card, Field, Input, List, MoneyInput, PageHeader, PercentInput, Row, Section, Sheet, toast, Toggle,
 } from '@/ui/kit'
 
 function ServiceForm({ service, onClose }: { service?: Service; onClose: () => void }) {
@@ -87,15 +88,36 @@ function RulesForm({ onClose }: { onClose: () => void }) {
   )
 }
 
+function PasswordSheet({ onClose }: { onClose: () => void }) {
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const [busy, setBusy] = useState(false)
+  const save = async () => {
+    setBusy(true)
+    try {
+      await api('/api/auth/password', { method: 'POST', body: JSON.stringify({ current, next }) })
+      toast.ok('Senha alterada')
+      onClose()
+    } catch (e) {
+      toast.bad(e instanceof Error ? e.message : 'Não foi possível alterar.')
+      setBusy(false)
+    }
+  }
+  return (
+    <Sheet title="Trocar senha" onClose={onClose} footer={<Button variant="primary" block disabled={busy || next.length < 8} onClick={() => void save()}>Salvar nova senha</Button>}>
+      <Field label="Senha atual"><Input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} /></Field>
+      <Field label="Nova senha" hint="Ao menos 8 caracteres."><Input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} /></Field>
+    </Sheet>
+  )
+}
+
 export default function SettingsPage() {
   const db = useDb()
   const actor = useActor()
   const owner = actor.role === 'owner'
   const [service, setService] = useState<Service | 'new' | null>(null)
   const [rules, setRules] = useState(false)
-  const [reset, setReset] = useState<'demo' | 'empty' | null>(null)
-  const file = useRef<HTMLInputElement>(null)
-  const profile = actor.barberId ?? 'owner'
+  const [password, setPassword] = useState(false)
 
   const backup = () => {
     const blob = new Blob([JSON.stringify(getState())], { type: 'application/json' })
@@ -106,29 +128,22 @@ export default function SettingsPage() {
     URL.revokeObjectURL(a.href)
   }
 
-  const restore = async (f: File) => {
-    try {
-      replaceState(JSON.parse(await f.text()) as DbState)
-      toast.ok('Backup restaurado')
-    } catch {
-      toast.bad('Arquivo de backup inválido.')
-    }
-  }
-
   return (
     <>
       <PageHeader back title="Ajustes" sub={db.settings.shopName} />
 
-      <Section title="Entrar como" className="pt-0">
-        <Chips
-          value={profile}
-          onChange={(id) => {
-            const b = db.barbers.find((x) => x.id === id)
-            setActor(b ? { role: 'barber', barberId: b.id, name: b.name } : { role: 'owner', barberId: null, name: 'Dono' })
-          }}
-          options={[{ value: 'owner', label: 'Dono' }, ...db.barbers.filter((b) => b.active).map((b) => ({ value: b.id, label: b.name }))]}
-        />
-        <p className="mt-1.5 text-xs text-muted">Simulação de perfis. O login real entra com o Supabase.</p>
+      {password && <PasswordSheet onClose={() => setPassword(false)} />}
+      <Section title="Conta" className="pt-0">
+        <Card className="flex items-center justify-between gap-3 p-3.5">
+          <div className="min-w-0">
+            <div className="truncate font-bold">{actor.name}</div>
+            <div className="text-sm text-muted">{owner ? 'Dono' : 'Barbeiro'}</div>
+          </div>
+          <div className="flex gap-2">
+            <Button className="min-h-10" onClick={() => setPassword(true)}>Senha</Button>
+            <Button variant="danger" className="min-h-10" onClick={() => void logout()}>Sair</Button>
+          </div>
+        </Card>
       </Section>
 
       {owner && (
@@ -145,48 +160,18 @@ export default function SettingsPage() {
             <Button block onClick={() => setRules(true)}>Horários, taxas e regras</Button>
           </Section>
 
-          <Section title="Dados deste aparelho">
-            <Card className="space-y-2 p-3.5">
-              <p className="text-sm text-muted">Sem o Supabase conectado, tudo fica salvo só neste aparelho.</p>
-              <div className="grid grid-cols-2 gap-2">
-                <Button onClick={backup}><Download size={17} /> Backup</Button>
-                <Button onClick={() => file.current?.click()}><Upload size={17} /> Restaurar</Button>
-              </div>
-              <input
-                ref={file}
-                type="file"
-                accept="application/json"
-                hidden
-                onChange={(e) => {
-                  const f = e.target.files?.[0]
-                  if (f) void restore(f)
-                  e.target.value = ''
-                }}
-              />
-              <Button block onClick={() => setReset('demo')}>Recarregar dados de exemplo</Button>
-              <Button block variant="danger" onClick={() => setReset('empty')}>Apagar tudo e começar do zero</Button>
-            </Card>
+          <Section title="Notificações">
+            <Link to="/notificacoes"><Button block>Testar e-mail e push</Button></Link>
+          </Section>
+
+          <Section title="Dados">
+            <Button block onClick={backup}><Download size={17} /> Baixar uma cópia dos dados</Button>
           </Section>
         </>
       )}
 
       {service && <ServiceForm service={service === 'new' ? undefined : service} onClose={() => setService(null)} />}
       {rules && <RulesForm onClose={() => setRules(false)} />}
-      {reset && (
-        <ConfirmSheet
-          title={reset === 'demo' ? 'Recarregar exemplo?' : 'Apagar tudo?'}
-          text="Tudo o que está neste aparelho será substituído. Faça um backup antes se quiser guardar."
-          confirm={reset === 'demo' ? 'Recarregar' : 'Apagar tudo'}
-          danger
-          onClose={() => setReset(null)}
-          onConfirm={() => {
-            resetTo(reset)
-            setActor({ role: 'owner', barberId: null, name: 'Dono' })
-            setReset(null)
-            toast.ok('Pronto')
-          }}
-        />
-      )}
     </>
   )
 }

@@ -1,3 +1,5 @@
+import { waTemplates } from '@/domain/whatsapp'
+import { WhatsAppButton } from '@/ui/whatsapp'
 import { CalendarPlus, Pencil } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -35,7 +37,10 @@ export default function ClientDetailPage() {
           <IconButton label="Editar cliente" onClick={() => setEditing(true)}><Pencil size={18} /></IconButton>
         </div>
         {client.notes && <p className="mt-3 rounded-xl bg-warn/10 p-3 text-sm text-warn">{client.notes}</p>}
-        <Button variant="primary" block className="mt-3" onClick={() => setBooking(true)}><CalendarPlus size={19} /> Agendar</Button>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Button variant="primary" onClick={() => setBooking(true)}><CalendarPlus size={19} /> Agendar</Button>
+          <WhatsAppButton phone={client.phone} text={stats.lastVisit && stats.expectedReturn && stats.expectedReturn <= dateKey(nowISO()) ? waTemplates.comeBack(db, client) : waTemplates.generic(db, client)}>WhatsApp</WhatsAppButton>
+        </div>
       </header>
 
       <div className="grid grid-cols-2 gap-2 px-4 pt-4">
@@ -73,7 +78,9 @@ export default function ClientDetailPage() {
                 {plan.visitsPerCycle === null ? `${sub.usedVisits} visitas no ciclo` : `${sub.usedVisits} de ${plan.visitsPerCycle} visitas`} · até {brDate(sub.periodEnd)}
               </div>
             </div>
-            <Badge tone={sub.status === 'active' ? 'ok' : 'bad'}>{sub.status === 'active' ? 'Ativa' : 'Em atraso'}</Badge>
+            <Badge tone={sub.status === 'active' ? 'ok' : sub.status === 'pending' ? 'info' : 'bad'}>
+              {sub.status === 'active' ? 'Ativa' : sub.status === 'pending' ? 'Aguardando pagamento' : 'Em atraso'}
+            </Badge>
           </Card>
         </Section>
       )}

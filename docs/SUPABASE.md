@@ -1,73 +1,37 @@
-# Conectando o Supabase
+# Banco de dados
 
-Hoje o app roda em modo local: o banco inteiro fica no IndexedDB do aparelho. Isso serve para validar com o cliente, **não para operar a barbearia**, porque cada celular teria dados diferentes.
+O app fala só com o servidor na Cloudflare (`worker/`). O servidor fala com o Supabase por cinco funções `barbearia_*`, protegidas por uma chave própria. As tabelas ficam no schema `barbearia`, que não é exposto.
 
-A infraestrutura foi pensada para o plano grátis do Supabase, com Gmail para e-mail e backup próprio.
+Por isso o banco pode morar no mesmo projeto de outro sistema sem encostar nele: hoje está no projeto **ATHG**, temporariamente.
 
-## O que já está pronto
+## Como os dados fluem
 
-- `supabase/migrations`: tabelas, travas, permissões e fila de envio, testadas em Postgres real.
-- `supabase/functions/process-outbox`: envio por Gmail e OneSignal. A lógica está testada; a conexão com o Gmail real e com o OneSignal, ainda não.
-- `scripts/backup.sh`, `scripts/restore.sh` e `.github/workflows/backup.yml`: backup diário criptografado.
+1. O aparelho calcula o comando na hora, para a tela responder sem esperar.
+2. O servidor repete o mesmo cálculo com os mesmos `src/domain`, usando o papel da sessão, e grava.
+3. Se outro comando entrou antes, o banco devolve conflito e o servidor refaz sobre a versão nova.
+4. Se recusar, a tela volta ao que está confirmado.
+5. Os aparelhos buscam o que mudou a cada 10 segundos e ao voltar para o app.
 
-## O que falta no código
+As travas finais ficam no banco, em `supabase/store/schema.sql`: agenda sem sobreposição, estoque não negativo, venda única por atendimento e histórico financeiro imutável.
 
-1. **Login real.** Trocar o "Entrar como" dos Ajustes pelo Supabase Auth e preencher `profiles`. Sem isso, as permissões valem só na tela.
-2. **Regras no servidor.** Os comandos de `src/domain` rodam no aparelho. Fechamento, estorno, pagamento de comissão e renovação precisam virar funções no banco (RPC), em uma transação cada, usando os testes atuais como especificação.
-3. **Link público.** Precisa de uma Edge Function própria, com limite de requisições. Visitantes não têm acesso direto às tabelas.
-4. **Rotina periódica.** `runAutomations` vira um `pg_cron`.
-5. **Trocar `src/data/store.ts`.** `bootstrap`, `commit` e `exec` são os pontos de troca.
+## Configurar em um projeto novo
 
-## E-mail pelo Gmail
-
-1. Na conta da barbearia, ative a verificação em duas etapas e crie uma senha de app.
-2. Copie `.env.example` para `.env.local`, preencha e rode `npm run test:gmail`. Deve chegar um e-mail na própria conta.
-3. Grave os segredos:
-
-```bash
-supabase secrets set GMAIL_USER=... GMAIL_APP_PASSWORD=... CRON_SECRET=... MAIL_FROM_NAME="Samuel Barbearia"
-```
-
-4. Publique a função e **confirme se a porta 465 passa**:
-
-```bash
-supabase functions deploy process-outbox
-```
-
-```bash
-curl -H "Authorization: Bearer SUA_CHAVE_ANON" -H "x-cron-secret: SEU_SEGREDO" "https://SEU_PROJETO.supabase.co/functions/v1/process-outbox?check=1"
-```
-
-A resposta esperada é `{"gmail":"ok"}`. O Supabase bloqueia as portas 25 e 587 e não documenta a 465. **Se falhar**, rode o mesmo `worker.ts` numa função da Vercel, chamada pelo mesmo cron. Nada na fila muda.
-
-5. Agende o envio e a limpeza no SQL Editor (guarde `project_url`, `anon_key` e `cron_secret` no Vault antes):
+1. Rode `supabase/store/schema.sql` no SQL Editor do projeto.
+2. Ajuste a URL e a chave publicável em `scripts/setup-secrets.sh` e rode o script. Ele mostra um `HASH`.
+3. Grave o hash no banco:
 
 ```sql
-create extension if not exists pg_cron;
-create extension if not exists pg_net;
-
-select cron.schedule('enviar-fila', '* * * * *', $$
-  select net.http_post(
-    url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url') || '/functions/v1/process-outbox',
-    headers := jsonb_build_object(
-      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'anon_key'),
-      'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret')
-    ),
-    timeout_milliseconds := 30000
-  );
-$$);
-
-select cron.schedule('limpar-mensagens', '30 6 * * 0', 'select purge_old_messages(90)');
-select cron.schedule('limpar-historico-cron', '45 6 * * 0', $$
-  delete from cron.job_run_details where end_time < now() - interval '7 days'
-$$);
+insert into barbearia.meta (api_secret_hash) values ('HASH');
 ```
 
-O último agendamento importa: o cron a cada minuto gera 1.440 registros por dia, que o Supabase não limpa sozinho.
+4. Publique com `npm run deploy` e abra o app. A primeira tela cria a conta do dono e pede a `TEST_KEY`.
 
-**Limites.** O teto é de 400 e-mails por dia, abaixo dos 500 do Gmail comum, e o marketing usa no máximo 200. Lembretes e confirmações sempre saem primeiro. Se o Gmail recusar a senha ou acusar limite, o lote para e volta intacto para a fila.
+## Migrar para a conta definitiva
 
-**Se a senha da conta Google mudar**, o Google cancela a senha de app: gere outra e repita o `supabase secrets set`.
+1. Faça uma restauração do backup no projeto novo (ver abaixo).
+2. Rode `scripts/setup-secrets.sh` apontando para o projeto novo e atualize o hash em `barbearia.meta`.
+3. Publique. Quem estiver logado continua logado.
+4. Apague o schema e as funções `barbearia_*` do ATHG.
 
 ## Backup diário
 
@@ -75,32 +39,20 @@ O repositório precisa ser **privado**. Em Settings > Secrets and variables > Ac
 
 | Nome | Tipo | Valor |
 | --- | --- | --- |
-| `SUPABASE_DB_URL` | Secret | String do **Session pooler** (a conexão direta do plano grátis é só IPv6) |
+| `SUPABASE_DB_URL` | Secret | String do **Session pooler** do projeto |
 | `BACKUP_PASSPHRASE` | Secret | Frase longa. **Guarde também fora do GitHub** |
-| `SUPABASE_URL` | Secret | URL do projeto |
-| `SUPABASE_ANON_KEY` | Secret | Chave anon |
 | `BACKUP_ENABLED` | Variable | `true` |
 
-O backup roda às 03:00, fica guardado por 90 dias nos artefatos da execução e o GitHub avisa por e-mail se falhar. A mesma rotina faz uma consulta para manter o projeto ativo em períodos parados.
-
-A imagem `postgres:17` precisa ser igual ou mais nova que a versão do banco. Confira no painel do Supabase.
-
-**Sem a frase, o backup não abre.** Se ela se perder, os backups se perdem junto.
-
-### Restaurar
-
-Baixe o artefato da execução no GitHub e, com a frase em `BACKUP_PASSPHRASE`:
+O backup roda às 03:00, cobre só o schema `barbearia` e fica guardado por 90 dias. O GitHub avisa por e-mail se falhar. Sem a frase, ele não abre.
 
 ```bash
 scripts/restore.sh backup-2026-11-05.sql.gz.enc "URL_DO_PROJETO_NOVO"
 ```
 
-Sempre em um projeto **novo e vazio**. As contas de login da equipe não vão no backup: recrie-as e atualize `profiles`.
+Sempre em um projeto **novo e vazio**. **Faça uma restauração de verdade antes de operar** e repita a cada três meses.
 
-**Faça uma restauração de verdade antes de entrar em produção** e repita a cada três meses. Backup que nunca foi restaurado é só uma esperança.
+## Limites para acompanhar
 
-## Quando mudar para o Supabase Pro
-
-O espaço não é o gatilho: o volume estimado é de dezenas de MB por ano, contra 500 MB. Mude quando a barbearia não puder ficar parada enquanto você restaura um backup, ou quando precisar de suporte e backups gerenciados.
-
-Também falta um gateway para cobrança recorrente de verdade (Asaas, Mercado Pago ou Stripe), e testar em aparelho real o service worker do OneSignal junto com o da PWA.
+- **CPU da Cloudflare:** o plano grátis dá 10 ms de CPU por requisição. Com poucos dados cabe; com um ano de operação é provável precisar do Workers Paid (US$ 5/mês).
+- **Rotas públicas:** limitadas a 8 pedidos por minuto por endereço de internet, e cada e-mail recebe no máximo 6 mensagens por dia. O limitador da Cloudflare conta por localidade, então barra rajadas, mas não é exato.
+- **Clube online:** cartão automático pelo Asaas, ver [ASAAS.md](ASAAS.md).

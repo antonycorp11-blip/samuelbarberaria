@@ -1,6 +1,6 @@
 import { audit, base, must, requireBarberScope, requireOwner, type Command, type Ctx } from './engine'
 import { fail } from './errors'
-import { appointmentMessage, enqueue } from './messages'
+import { appointmentMessage, enqueue, welcomeMessage } from './messages'
 import { addDays, addMinutes, brDate, dateKey, minutesOf, timeFromMinutes, timeOf, toISO, weekday } from './time'
 import type { Appointment, AppointmentStatus, Barber, Client, DateKey, DbState, ID, ISO } from './types'
 
@@ -167,8 +167,7 @@ function insertAppointment(
     createdAt: ctx.now,
   }
   d.appointments.push(appt)
-  const barber = must(s.barbers.find((b) => b.id === i.barberId), 'Profissional')
-  enqueue(d, ctx, appointmentMessage(s.settings.shopName, 'booking_confirmation', client, appt, barber.name))
+  enqueue(d, ctx, appointmentMessage(s, 'booking_confirmation', client, appt))
   return appt
 }
 
@@ -201,8 +200,7 @@ export const rescheduleAppointment: Command<{ id: ID; barberId: ID; start: ISO }
   a.end = end
   a.status = 'scheduled'
   const client = must(s.clients.find((c) => c.id === a.clientId), 'Cliente')
-  const barber = must(s.barbers.find((b) => b.id === i.barberId), 'Profissional')
-  enqueue(d, ctx, appointmentMessage(s.settings.shopName, 'booking_confirmation', client, a, barber.name))
+  enqueue(d, ctx, appointmentMessage(s, 'booking_confirmation', client, a))
   offerFreedSlot(d, ctx, freed)
   audit(d, ctx, 'agendamento.remarcar', a.id)
 }
@@ -222,8 +220,7 @@ export const cancelAppointment: Command<{ id: ID; reason?: string }> = (d, i, ct
   a.status = 'cancelled'
   const s = base(d)
   const client = must(s.clients.find((c) => c.id === a.clientId), 'Cliente')
-  const barber = must(s.barbers.find((b) => b.id === a.barberId), 'Profissional')
-  enqueue(d, ctx, appointmentMessage(s.settings.shopName, 'cancellation', client, a, barber.name))
+  enqueue(d, ctx, appointmentMessage(s, 'cancellation', client, a))
   offerFreedSlot(d, ctx, a)
   audit(d, ctx, 'agendamento.cancelar', a.id, i.reason ?? '')
 }
@@ -250,7 +247,7 @@ function offerFreedSlot(d: DbState, ctx: Ctx, slot: { barberId: ID; start: ISO; 
     clientId: client.id,
     kind: 'waitlist_slot',
     subject: 'Abriu um horário para você',
-    body: `${client.name.split(' ')[0]}, abriu um horário em ${brDate(date)} às ${timeOf(slot.start)}. Agende pelo link para garantir.`,
+    body: `${client.name.split(' ')[0]}, abriu um horário em ${brDate(date)} às ${timeOf(slot.start)}.\nCorre para garantir antes que alguém pegue!`,
     dedupeKey: `waitlist:${entry.id}:${slot.start}`,
   })
   audit(d, ctx, 'espera.avisar', entry.id)
@@ -317,7 +314,7 @@ function dayLoad(s: DbState, barberId: ID, date: DateKey) {
 }
 
 export const bookOnline: Command<
-  { name: string; phone: string; email: string; serviceIds: ID[]; barberId: ID; start: ISO; marketingOptIn: boolean },
+  { name: string; phone: string; email: string; serviceIds: ID[]; barberId: ID; start: ISO; marketingOptIn: boolean; coupon?: string | null },
   Appointment
 > = (d, i, ctx) => {
   const s = base(d)
@@ -348,16 +345,20 @@ export const bookOnline: Command<
       createdAt: ctx.now,
     }
     d.clients.push(client)
-    enqueue(d, ctx, {
-      to: email,
-      clientId: client.id,
-      kind: 'welcome',
-      subject: `Bem-vindo à ${s.settings.shopName}`,
-      body: `${client.name.split(' ')[0]}, que bom ter você com a gente.`,
-      dedupeKey: `welcome:${client.id}`,
-    })
+    enqueue(d, ctx, welcomeMessage(client))
   }
-  const appt = insertAppointment(d, ctx, { clientId: client.id, barberId: i.barberId, serviceIds: i.serviceIds, start: i.start, source: 'online' })
+  // Cupom do QR: só é anotado se existir e estiver valendo. O desconto entra no fechamento.
+  const code = i.coupon?.trim().toUpperCase()
+  const today = dateKey(ctx.now)
+  const coupon = code ? s.coupons.find((c) => c.code === code && c.active && c.validFrom <= today && c.validTo >= today) : undefined
+  const appt = insertAppointment(d, ctx, {
+    clientId: client.id, barberId: i.barberId, serviceIds: i.serviceIds, start: i.start, source: 'online',
+    notes: coupon ? `Cupom: ${coupon.code}` : '',
+  })
+  enqueue(d, ctx, {
+    channel: 'push', to: 'equipe', clientId: null, kind: 'new_booking', subject: 'Novo agendamento online',
+    body: `${client.name}, ${brDate(dateKey(appt.start))} às ${timeOf(appt.start)}`, dedupeKey: `new_booking:${appt.id}`,
+  })
   audit(d, ctx, 'agendamento.online', appt.id)
   return appt
 }

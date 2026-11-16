@@ -1,10 +1,21 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "samuel-barbearia",
+  "name": "samuelbarberaria",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "triggers": { "crons": ["* * * * *"] },
+  // Contagem por localidade da Cloudflare: barra rajadas, não é um limite exato.
+  "ratelimits": [
+    { "name": "PUBLIC_LIMITER", "namespace_id": "4101", "simple": { "limit": 8, "period": 60 } },
+    { "name": "AUTH_LIMITER", "namespace_id": "4102", "simple": { "limit": 10, "period": 60 } }
+  ],
+  "vars": { "APP_URL": "https://samuelbarberaria.antonycorp11.workers.dev" },
   "assets": {
     "directory": "./dist",
+    "binding": "ASSETS",
     // Rotas como /agenda e /agendar abrem direto, inclusive ao recarregar.
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
   }
 }

@@ -1,3 +1,5 @@
+import { waTemplates } from '@/domain/whatsapp'
+import { WhatsAppButton } from '@/ui/whatsapp'
 import { Plus, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { exec, nowISO, useDb } from '@/data/store'
@@ -52,13 +54,13 @@ export default function ClientsPage() {
   const rows =
     tab === 'all'
       ? [...db.clients].filter(match).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 80).map((c) => ({
-          c, sub: last.get(c.id) ? `Última visita ${brDate(last.get(c.id) as string)}` : 'Sem visitas ainda',
+          c, sub: last.get(c.id) ? `Última visita ${brDate(last.get(c.id) as string)}` : 'Sem visitas ainda', days: undefined as number | undefined,
         }))
       : tab === 'return'
         ? returning.filter((x) => match(x.client)).map((x) => ({
-            c: x.client, sub: x.expected === today ? 'Deve voltar hoje' : `Era esperado em ${dayLabel(x.expected)}`,
+            c: x.client, sub: x.expected === today ? 'Deve voltar hoje' : `Era esperado em ${dayLabel(x.expected)}`, days: undefined as number | undefined,
           }))
-        : inactive.filter((x) => match(x.client)).map((x) => ({ c: x.client, sub: `${x.daysAway} dias sem vir` }))
+        : inactive.filter((x) => match(x.client)).map((x) => ({ c: x.client, sub: `${x.daysAway} dias sem vir`, days: x.daysAway as number | undefined }))
 
   return (
     <>
@@ -87,7 +89,7 @@ export default function ClientsPage() {
           <Empty title="Ninguém por aqui" sub={term ? 'Tente outro nome ou celular.' : 'Esta lista está vazia.'} />
         ) : (
           <List>
-            {rows.map(({ c, sub }) => (
+            {rows.map(({ c, sub, days }) => (
               <Row
                 key={c.id}
                 to={`/clientes/${c.id}`}
@@ -95,6 +97,7 @@ export default function ClientsPage() {
                 title={c.name}
                 sub={sub}
                 right={subs.has(c.id) ? <Badge tone="brass">Clube</Badge> : c.rewards > 0 ? <Badge tone="ok">Prêmio</Badge> : undefined}
+                action={tab !== 'all' ? <WhatsAppButton compact phone={c.phone} text={waTemplates.comeBack(db, c, days)} /> : undefined}
               />
             ))}
           </List>
