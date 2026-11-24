@@ -145,7 +145,7 @@ export default function ClubPage() {
   const [chargeId, setChargeId] = useState<ID | null>(null)
   const [cancelId, setCancelId] = useState<ID | null>(null)
   const m = subscriptionMetrics(db)
-  const clubInvite = `Conheça o clube da ${db.settings.shopName} 👑\n\nVisual sempre em dia com mensalidade fixa e cobrança automática no cartão:\n👉 ${location.origin}/clube`
+  const clubInvite = `Conheça o clube da ${db.settings.shopName} 👑\n\nVisual sempre em dia com mensalidade fixa e cobrança automática no Pix ou no cartão:\n👉 ${location.origin}/clube`
   const members = db.subscriptions.filter((s) => s.status !== 'cancelled')
   const open = db.charges.filter((c) => c.status === 'pending').sort((a, b) => a.dueDate.localeCompare(b.dueDate))
   const clientOf = (subscriptionId: ID) => {
