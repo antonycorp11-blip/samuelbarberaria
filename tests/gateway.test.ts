@@ -9,7 +9,7 @@ import { assertInvariants, setup } from './helpers'
 function online() {
   const ctx = setup()
   const planId = ctx.w.do(upsertPlan, { name: 'Clube', priceCents: 12900, visitsPerCycle: 4, serviceIds: [ctx.cut], productDiscountBps: 1000, benefits: [] })
-  const start = ctx.w.do(startOnlineSubscription, { name: 'Carlos Novo', phone: '(11) 96666-5555', email: 'Carlos@Teste.com', planId })
+  const start = ctx.w.do(startOnlineSubscription, { name: 'Carlos Novo', phone: '(11) 96666-5555', email: 'Carlos@Teste.com', birthDate: '1990-03-15', planId })
   ctx.w.do(linkGateway, { subscriptionId: start.subscriptionId, checkoutId: 'chk-1' })
   const sub = () => ctx.w.state.subscriptions.find((s) => s.id === start.subscriptionId)!
   const pay = (paymentId: string, amountCents = 12900) => ctx.w.do(recordGatewayPayment, { externalId: 'sub_1', checkoutId: 'chk-1', paymentId, amountCents })
@@ -94,17 +94,24 @@ describe('clube com cartão automático', () => {
 
   it('quem desistiu no pagamento pode tentar de novo, e o abandono expira', () => {
     const { w, planId, sub } = online()
-    const again = w.do(startOnlineSubscription, { name: 'Carlos Novo', phone: '11966665555', email: 'carlos@teste.com', planId })
+    const again = w.do(startOnlineSubscription, { name: 'Carlos Novo', phone: '11966665555', email: 'carlos@teste.com', birthDate: '1990-03-15', planId })
     expect(sub().status).toBe('cancelled')
     w.now = '2026-03-06T12:00:00.000Z'
     w.do(runAutomations, undefined)
     expect(w.state.subscriptions.find((s) => s.id === again.subscriptionId)?.status).toBe('cancelled')
   })
 
+  it('guarda o aniversário e recusa data de nascimento inválida', () => {
+    const { w, planId } = online()
+    expect(w.state.clients.find((c) => c.phone === '11966665555')?.birthday).toBe('03-15')
+    const tryDate = (birthDate: string) => () => w.do(startOnlineSubscription, { name: 'Bia', phone: '11944443333', email: 'bia@teste.com', birthDate, planId })
+    for (const bad of ['', '15/03/1990', '1990-02-30', '1899-12-31', '2026-03-03']) expect(tryDate(bad)).toThrow(/data de nascimento/)
+  })
+
   it('assinante ativo não assina de novo', () => {
     const { w, planId, pay } = online()
     pay('pay-1')
-    expect(() => w.do(startOnlineSubscription, { name: 'Carlos', phone: '11966665555', email: 'c@teste.com', planId })).toThrow(/já é assinante/)
+    expect(() => w.do(startOnlineSubscription, { name: 'Carlos', phone: '11966665555', email: 'c@teste.com', birthDate: '1990-03-15', planId })).toThrow(/já é assinante/)
   })
 
   it('pagamento de assinatura desconhecida é ignorado sem quebrar', () => {
@@ -116,7 +123,7 @@ describe('clube com cartão automático', () => {
   it('o checkout acha o cliente e grava a assinatura do Asaas', () => {
     const ctx = setup()
     const planId = ctx.w.do(upsertPlan, { name: 'Clube', priceCents: 5000, visitsPerCycle: null, serviceIds: [ctx.cut], productDiscountBps: 0, benefits: [] })
-    const start = ctx.w.do(startOnlineSubscription, { name: 'Ana Lima', phone: '11955554444', email: 'ana@teste.com', planId })
+    const start = ctx.w.do(startOnlineSubscription, { name: 'Ana Lima', phone: '11955554444', email: 'ana@teste.com', birthDate: '1985-12-01', planId })
     expect(ctx.w.do(recordGatewayPayment, { externalId: 'sub_x', subscriptionId: start.subscriptionId, paymentId: 'p', amountCents: 5000 })).toBe('activated')
     expect(ctx.w.state.subscriptions[0]?.gateway?.externalId).toBe('sub_x')
   })

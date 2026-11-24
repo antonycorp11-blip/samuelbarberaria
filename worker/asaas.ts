@@ -12,6 +12,9 @@ export interface AsaasPayment {
   id: string
   status: string
   value: number
+  /** Valor que cai na conta depois da taxa do Asaas. */
+  netValue?: number | null
+  dueDate?: string
   subscription?: string | null
   externalReference?: string | null
 }
@@ -22,6 +25,20 @@ export interface AsaasSubscription {
   deleted?: boolean
   checkoutSession?: string | null
   externalReference?: string | null
+  pixAutomaticAuthorizationMode?: string | null
+}
+
+export interface AsaasPixQrCode {
+  encodedImage: string
+  payload: string
+  expirationDate: string
+}
+
+/** Erro devolvido pela API, com o código HTTP para separar dado recusado de falha do Asaas. */
+export class AsaasError extends Error {
+  constructor(readonly status: number, readonly description: string) {
+    super(`Asaas ${status}: ${description}`)
+  }
 }
 
 /** Situações em que o dinheiro do cartão já foi aprovado. */
@@ -36,7 +53,7 @@ export function asaas(env: AsaasEnv, http: typeof fetch = fetch) {
       headers: { access_token: env.ASAAS_API_KEY ?? '', 'Content-Type': 'application/json', 'User-Agent': 'SamuelBarberShop/1.0', ...init?.headers },
     })
     const data = (await res.json().catch(() => ({}))) as T & { errors?: { description?: string }[] }
-    if (!res.ok) throw new Error(`Asaas ${res.status}: ${data.errors?.map((e) => e.description).join('; ') || 'sem detalhes'}`)
+    if (!res.ok) throw new AsaasError(res.status, data.errors?.map((e) => e.description).join('; ') || 'sem detalhes')
     return data
   }
   return {
@@ -60,6 +77,39 @@ export function asaas(env: AsaasEnv, http: typeof fetch = fetch) {
           subscription: { cycle: 'MONTHLY', nextDueDate: c.firstDueDate },
         }),
       }),
+    /** Reaproveita o cliente pelo CPF para não duplicar cadastro no Asaas. */
+    customerFor: async (c: { name: string; cpf: string; email: string; phone: string; externalReference: string }) => {
+      const cpf = c.cpf.replace(/\D/g, '')
+      const found = await call<{ data?: { id: string }[] }>(`/customers?cpfCnpj=${cpf}&limit=1`)
+      const existing = found.data?.[0]
+      if (existing) return existing.id
+      const created = await call<{ id: string }>('/customers', {
+        method: 'POST',
+        body: JSON.stringify({
+          // Os avisos do Asaas ficam ligados: quem não autorizar o Pix Automático recebe o Pix do mês por e-mail.
+          name: c.name, cpfCnpj: cpf, email: c.email, mobilePhone: c.phone, externalReference: c.externalReference,
+        }),
+      })
+      return created.id
+    },
+    /**
+     * Assinatura mensal no Pix com a oferta de Pix Automático. Conta que ainda não pode usar
+     * o Pix Automático recebe a mesma assinatura sem a oferta: o cliente paga o Pix todo mês.
+     */
+    createPixSubscription: async (c: { customer: string; amountCents: number; firstDueDate: string; description: string; subscriptionId: string }) => {
+      const body = (mode: 'OPTIONAL' | 'DISABLED') => JSON.stringify({
+        customer: c.customer, billingType: 'PIX', cycle: 'MONTHLY', value: c.amountCents / 100, nextDueDate: c.firstDueDate,
+        description: c.description, externalReference: c.subscriptionId, pixAutomaticAuthorizationMode: mode,
+      })
+      try {
+        return await call<AsaasSubscription>('/subscriptions', { method: 'POST', body: body('OPTIONAL') })
+      } catch (e) {
+        if (!(e instanceof AsaasError) || e.status !== 400) throw e
+        return call<AsaasSubscription>('/subscriptions', { method: 'POST', body: body('DISABLED') })
+      }
+    },
+    subscriptionPayments: (id: string) => call<{ data: AsaasPayment[] }>(`/subscriptions/${encodeURIComponent(id)}/payments`),
+    pixQrCode: (paymentId: string) => call<AsaasPixQrCode>(`/payments/${encodeURIComponent(paymentId)}/pixQrCode`),
     getPayment: (id: string) => call<AsaasPayment>(`/payments/${encodeURIComponent(id)}`),
     getSubscription: (id: string) => call<AsaasSubscription>(`/subscriptions/${encodeURIComponent(id)}`),
     /** Encerra a recorrência: o Asaas para de gerar cobranças e remove as pendentes. */

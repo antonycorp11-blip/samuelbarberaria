@@ -1,4 +1,4 @@
-import { BarChart3, Boxes, Copy, Crown, Megaphone, MessageCircle, QrCode, Scissors, Settings, Wallet } from 'lucide-react'
+import { BarChart3, Boxes, Calculator, Copy, Crown, Megaphone, MessageCircle, QrCode, Scissors, Settings, Wallet } from 'lucide-react'
 import { useState } from 'react'
 import { QrSheet } from '@/ui/qr'
 import { Link } from 'react-router-dom'
@@ -12,7 +12,8 @@ const ITEMS = [
   { to: '/financeiro', label: 'Financeiro', sub: 'Caixa, fluxo e DRE', icon: Wallet, owner: true },
   { to: '/equipe', label: 'Equipe', sub: 'Comissões e ranking', icon: Scissors, owner: false },
   { to: '/estoque', label: 'Estoque', sub: 'Produtos e giro', icon: Boxes, owner: true },
-  { to: '/clube', label: 'Clube', sub: 'Assinaturas', icon: Crown, owner: true },
+  { to: '/assinaturas', label: 'Clube', sub: 'Assinaturas', icon: Crown, owner: true },
+  { to: '/taxas', label: 'Taxas', sub: 'Quanto cai líquido', icon: Calculator, owner: true },
   { to: '/marketing', label: 'Marketing', sub: 'Cupons e campanhas', icon: Megaphone, owner: true },
   { to: '/relatorios', label: 'Relatórios', sub: 'Indicadores', icon: BarChart3, owner: true },
   { to: '/config', label: 'Ajustes', sub: 'Serviços e horários', icon: Settings, owner: false },

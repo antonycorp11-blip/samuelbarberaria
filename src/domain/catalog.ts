@@ -24,6 +24,15 @@ export const updateSettings: Command<Partial<Settings>> = (d, i, ctx) => {
   if (next.loyaltyStampsRequired < 1) fail('bad_value', 'O cartão fidelidade precisa de ao menos 1 selo.')
   if (next.slotMinutes < 5) fail('bad_value', 'O intervalo mínimo da agenda é 5 minutos.')
   if (next.subscriptionCommissionBps < 0 || next.subscriptionCommissionBps > 10000) fail('bad_value', 'Comissão inválida.')
+  if ((next.pixKey?.length ?? 0) > 77) fail('bad_value', 'Chave Pix muito longa.')
+  if ((next.pixCity?.length ?? 0) > 40) fail('bad_value', 'Cidade muito longa.')
+  if (next.asaasFees) {
+    const f = next.asaasFees
+    const ints = [f.cardFixedCents, f.cardBps, f.pixCents, f.anticipationMonthlyBps, f.cardDays]
+    if (ints.some((v) => !Number.isInteger(v) || v < 0) || f.cardBps > 10000 || f.anticipationMonthlyBps > 10000 || f.cardDays > 120) {
+      fail('bad_value', 'Taxa do Asaas inválida.')
+    }
+  }
   for (const h of next.hours) {
     if (h && h.close <= h.open) fail('bad_hours', 'O fechamento precisa ser depois da abertura.')
   }

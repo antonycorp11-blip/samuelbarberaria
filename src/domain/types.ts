@@ -37,6 +37,21 @@ export interface Settings {
   loyaltyStampsRequired: number
   subscriptionCommissionBps: Bps
   subscriptionGraceDays: number
+  /** Chave Pix para receber no balcão. Sem valor, vale a chave da conta Asaas; vazia desliga. */
+  pixKey?: string
+  /** Cidade que aparece no Pix (o padrão do Banco Central exige). */
+  pixCity?: string
+  /** Taxas da conta Asaas para a calculadora. Sem valor, valem as padrão publicadas. */
+  asaasFees?: AsaasFees
+}
+
+export interface AsaasFees {
+  cardFixedCents: Cents
+  cardBps: Bps
+  pixCents: Cents
+  anticipationMonthlyBps: Bps
+  /** Dias até o cartão ficar disponível para saque. */
+  cardDays: number
 }
 
 export interface Service {
@@ -262,8 +277,22 @@ export interface Subscription {
   usedVisits: number
   autoRenew: boolean
   cancelledAt: ISO | null
-  /** Cobrança automática no cartão pelo Asaas: checkout pago e a assinatura criada lá. */
-  gateway?: { provider: 'asaas'; checkoutId: string | null; externalId: string | null }
+  /** Cobrança automática pelo Asaas, no cartão (checkout) ou no Pix (assinatura criada antes do pagamento). */
+  gateway?: SubscriptionGateway
+}
+
+export interface SubscriptionGateway {
+  provider: 'asaas'
+  checkoutId: string | null
+  /** Assinatura no Asaas. */
+  externalId: string | null
+  /** Sem valor: cartão (assinaturas antigas). */
+  method?: 'card' | 'pix'
+  /** Pix Automático: offered = o cliente ainda não autorizou no banco; off = sem débito automático. */
+  pixAutomatic?: 'offered' | 'active' | 'off'
+  pixAuthorizationId?: string | null
+  /** A assinatura já foi encerrada no Asaas. */
+  remoteClosed?: boolean
 }
 
 export interface SubscriptionCharge {

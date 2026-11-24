@@ -7,7 +7,7 @@ import { METHOD_LABEL } from '@/domain/finance'
 import { formatBps, formatBRL } from '@/domain/money'
 import { cancelSubscription, payCharge, subscribe, subscriptionMetrics, upsertPlan } from '@/domain/subscriptions'
 import { brDate } from '@/domain/time'
-import type { ID, PaymentMethod, Plan } from '@/domain/types'
+import type { ID, PaymentMethod, Plan, Subscription } from '@/domain/types'
 import {
   attempt, Avatar, Badge, Button, Card, Chips, ConfirmSheet, Empty, Field, IconButton, Input, List, MoneyInput, PageHeader, PercentInput, Row, Section, Segmented, Sheet, Stat, Textarea, Toggle,
 } from '@/ui/kit'
@@ -85,6 +85,15 @@ function SubscribeSheet({ onClose }: { onClose: () => void }) {
   )
 }
 
+/** Como a mensalidade chega: cartão, Pix debitado sozinho, ou Pix que o cliente paga todo mês. */
+function gatewayBadge(g: NonNullable<Subscription['gateway']>) {
+  if (g.method !== 'pix') return <Badge tone="ok">Cartão automático</Badge>
+  if (g.pixAutomatic === 'active') return <Badge tone="ok">Pix Automático</Badge>
+  // O Asaas ofereceu, mas o cliente ainda não confirmou no banco: a oferta volta na próxima cobrança.
+  if (g.pixAutomatic === 'offered') return <Badge tone="warn">Pix · falta autorizar</Badge>
+  return <Badge tone="info">Pix mensal</Badge>
+}
+
 function ChargeSheet({ chargeId, onClose }: { chargeId: ID; onClose: () => void }) {
   const db = useDb()
   const [method, setMethod] = useState<PaymentMethod>('pix')
@@ -95,7 +104,13 @@ function ChargeSheet({ chargeId, onClose }: { chargeId: ID; onClose: () => void 
     return (
       <Sheet title="Cobrança automática" onClose={onClose}>
         <p className="text-sm text-muted">
-          Esta mensalidade é cobrada no cartão pelo Asaas no vencimento. Ela é marcada como paga sozinha, assim que o pagamento for aprovado. Se o cartão recusar, a assinatura fica em atraso depois da tolerância configurada.
+          {automatic.method !== 'pix'
+            ? 'Esta mensalidade é cobrada no cartão pelo Asaas no vencimento. Ela é marcada como paga sozinha, assim que o pagamento for aprovado. Se o cartão recusar, a assinatura fica em atraso depois da tolerância configurada.'
+            : automatic.pixAutomatic === 'active'
+              ? 'Esta mensalidade é debitada pelo Pix Automático no vencimento e marcada como paga sozinha. Se o banco do cliente recusar, a equipe recebe um aviso e ela fica em aberto.'
+              : automatic.pixAutomatic === 'offered'
+                ? 'O cliente pagou pelo Pix mas ainda não autorizou o Pix Automático no banco. O Asaas envia o Pix do próximo mês por e-mail e oferece a autorização de novo: é só ele escanear o QR Code e confirmar quando o banco perguntar.'
+                : 'O cliente não autorizou o Pix Automático, então o Asaas envia o Pix do mês por e-mail para ele pagar. Ela é marcada como paga sozinha quando o Pix cair.'}
         </p>
       </Sheet>
     )
@@ -187,7 +202,7 @@ export default function ClubPage() {
                       s.status === 'pending' ? <Badge tone="info">Aguardando pagamento</Badge>
                         : s.status === 'past_due' ? <Badge tone="bad">Em atraso</Badge>
                         : !s.autoRenew ? <Badge tone="warn">Encerrando</Badge>
-                        : s.gateway ? <Badge tone="ok">Cartão automático</Badge>
+                        : s.gateway ? gatewayBadge(s.gateway)
                         : <Badge tone="ok">Ativa</Badge>
                     }
                     onClick={() => setCancelId(s.id)}
@@ -218,7 +233,7 @@ export default function ClubPage() {
             </List>
           )}
           <Card className="mt-2 p-3.5 text-sm text-muted">
-            Assinaturas com cartão automático se quitam sozinhas pelo Asaas. As cobranças das assinaturas feitas no balcão são confirmadas aqui.
+            Assinaturas no cartão ou no Pix pelo Asaas se quitam sozinhas. As cobranças das assinaturas feitas no balcão são confirmadas aqui.
           </Card>
         </div>
       )}

@@ -112,7 +112,7 @@ export default function HomePage() {
               <Row to="/equipe" left={<Wallet size={20} className="text-brass" />} title="Comissões a pagar" sub={formatBRL(pendingCommission)} right={<ChevronRight size={18} />} />
             )}
             {club.pastDueCount > 0 && (
-              <Row to="/clube" left={<AlertTriangle size={20} className="text-bad" />} title={`${club.pastDueCount} assinante(s) em atraso`} sub={`${formatBRL(club.openCents)} em aberto`} right={<ChevronRight size={18} />} />
+              <Row to="/assinaturas" left={<AlertTriangle size={20} className="text-bad" />} title={`${club.pastDueCount} assinante(s) em atraso`} sub={`${formatBRL(club.openCents)} em aberto`} right={<ChevronRight size={18} />} />
             )}
           </List>
         </Section>

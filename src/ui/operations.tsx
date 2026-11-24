@@ -1,7 +1,9 @@
-import { Check, Clock, Plus, Search, Trash2, UserPlus, Zap } from 'lucide-react'
+import { Check, Clock, Copy, Plus, QrCode, Search, Trash2, UserPlus, Zap } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { waTemplates } from '@/domain/whatsapp'
 import { WhatsAppButton } from './whatsapp'
+import { QrSvg } from './qr'
+import { shopPix } from '@/domain/pix'
 import { Link } from 'react-router-dom'
 import { exec, getCtx, nowISO, useActor, useDb } from '@/data/store'
 import {
@@ -16,7 +18,7 @@ import { activeSubscription, checkout, quote, type CheckoutItem } from '@/domain
 import { addDays, brDate, dateKey, dayLabel, timeOf, toISO, weekdayLabel } from '@/domain/time'
 import type { Appointment, AppointmentStatus, DateKey, ID, ISO, PaymentMethod } from '@/domain/types'
 import {
-  Avatar, Badge, Button, Chips, ConfirmSheet, cx, Field, IconButton, Input, MoneyInput, Row, Sheet, Textarea, Toggle, attempt,
+  Avatar, Badge, Button, Chips, ConfirmSheet, cx, Field, IconButton, Input, MoneyInput, Row, Sheet, Textarea, Toggle, attempt, toast,
 } from './kit'
 
 export const STATUS_LABEL: Record<AppointmentStatus, string> = {
@@ -408,6 +410,7 @@ export function CheckoutSheet({ appointment, onClose, onBack }: { appointment?: 
   const [payments, setPayments] = useState<{ method: PaymentMethod; amountCents: number }[]>([{ method: 'pix', amountCents: 0 }])
   const [received, setReceived] = useState(0)
   const [adding, setAdding] = useState(false)
+  const [showPix, setShowPix] = useState(false)
 
   const input = {
     appointmentId: appointment?.id ?? null, clientId, barberId: barberId ?? '', items,
@@ -430,6 +433,16 @@ export function CheckoutSheet({ appointment, onClose, onBack }: { appointment?: 
   const paid = finalPayments.reduce((t, p) => t + p.amountCents, 0)
   const missing = total - paid
   const cashOnly = !split && payments[0]?.method === 'cash' && total > 0
+  const pixAmount = finalPayments.find((p) => p.method === 'pix')?.amountCents ?? 0
+  const pixCode = pixAmount > 0 ? shopPix(db.settings, pixAmount) : null
+  const copyPix = async () => {
+    try {
+      await navigator.clipboard.writeText(pixCode ?? '')
+      toast.ok('Código Pix copiado')
+    } catch {
+      toast.bad('Não foi possível copiar.')
+    }
+  }
 
   const setLine = (index: number, qty: number) =>
     setItems((list) => (qty <= 0 ? list.filter((_, i) => i !== index) : list.map((x, i) => (i === index ? { ...x, qty } : x))))
@@ -551,6 +564,20 @@ export function CheckoutSheet({ appointment, onClose, onBack }: { appointment?: 
               )}
             </div>
           ))}
+          {pixCode && (
+            <div className="space-y-2">
+              <Button block onClick={() => setShowPix(!showPix)}>
+                <QrCode size={18} /> {showPix ? 'Esconder QR do Pix' : `Mostrar QR do Pix · ${formatBRL(pixAmount)}`}
+              </Button>
+              {showPix && (
+                <div className="flex flex-col items-center gap-2 rounded-2xl bg-raised p-4">
+                  <QrSvg text={pixCode} size={220} />
+                  <p className="text-center text-[13px] text-muted">O cliente escaneia no app do banco, com o valor já preenchido. Confira se o Pix caiu antes de finalizar.</p>
+                  <Button variant="ghost" className="min-h-9 text-sm text-brass" onClick={() => void copyPix()}><Copy size={16} /> Copiar código Pix</Button>
+                </div>
+              )}
+            </div>
+          )}
           {cashOnly && (
             <Field label="Valor recebido" hint={received > total ? `Troco: ${formatBRL(received - total)}` : undefined}>
               <MoneyInput value={received} onChange={setReceived} />

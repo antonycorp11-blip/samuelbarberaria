@@ -7,12 +7,15 @@ import { SYSTEM_ACTOR, type Ctx } from '../src/domain/engine'
 import { DomainError } from '../src/domain/errors'
 import { CANCEL_MARKER } from '../src/domain/messages'
 import { claimMessages, settleMessage } from '../src/domain/outbox'
-import { linkGateway, recordGatewayPayment, recordGatewayRefund, startOnlineSubscription, syncGatewayStatus } from '../src/domain/gateway'
+import {
+  linkGateway, markRemoteClosed, recordGatewayPayment, recordGatewayRefund, recordPixRefused, remoteToClose, startOnlineSubscription,
+  syncGatewayStatus, syncPixAuthorization, validCpf,
+} from '../src/domain/gateway'
 import { viewFor, type Change } from '../src/domain/sync'
 import { dateKey, timeOf } from '../src/domain/time'
 import { PUSH_TEAM_ID } from '../src/domain/push'
 import { emptyState, type Actor, type DbState } from '../src/domain/types'
-import { asaas, PAID_STATUSES, validWebhookToken, type AsaasEnv } from './asaas'
+import { asaas, AsaasError, PAID_STATUSES, validWebhookToken, type AsaasEnv } from './asaas'
 import { processOutbox, type OutboxMessage } from './outbox'
 import { createSession, readSession } from './session'
 import type { Database, ServerStore } from './store'
@@ -120,15 +123,18 @@ const PUBLIC_ACTOR: Actor = { role: 'barber', barberId: null, name: 'Cliente (on
 /** Cancelamento pelo link do e-mail: o link assinado é a autorização, e vale só para aquele horário. */
 const CLIENT_LINK_ACTOR: Actor = { role: 'owner', barberId: null, name: 'Cliente (link do e-mail)' }
 
-async function cancelToken(appointmentId: string, env: Env) {
+/** Link assinado: só quem recebeu o link consegue usar aquele código. */
+async function signedToken(purpose: string, id: string, env: Env) {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(env.SESSION_SECRET ?? ''), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`cancelar:${appointmentId}`)))
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${purpose}:${id}`)))
   return [...sig.slice(0, 16)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-async function validCancelToken(appointmentId: string, token: string | null, env: Env) {
+const cancelToken = (appointmentId: string, env: Env) => signedToken('cancelar', appointmentId, env)
+
+async function validCancelToken(appointmentId: string, token: string | null, env: Env, purpose = 'cancelar') {
   if (!appointmentId || !token || !env.SESSION_SECRET) return false
-  const expected = await cancelToken(appointmentId, env)
+  const expected = await signedToken(purpose, appointmentId, env)
   if (expected.length !== token.length) return false
   let diff = 0
   for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ token.charCodeAt(i)
@@ -140,7 +146,7 @@ export function publicView(s: DbState, now: string): DbState {
   const today = dateKey(now)
   return {
     ...emptyState(),
-    settings: { ...s.settings, feeBps: emptyState().settings.feeBps, subscriptionCommissionBps: 0 },
+    settings: { ...s.settings, feeBps: emptyState().settings.feeBps, subscriptionCommissionBps: 0, asaasFees: undefined, pixKey: '', pixCity: undefined },
     services: s.services.filter((x) => x.active),
     plans: s.plans.filter((p) => p.active),
     barbers: s.barbers
@@ -156,7 +162,10 @@ export function publicView(s: DbState, now: string): DbState {
 /** Roda as automações, se pedido, e entrega a fila. */
 export async function deliver(deps: Deps, automations = false) {
   const { store, env, sendEmail, http } = deps
-  if (automations) await store.execute(runAutomations, undefined, systemCtx)
+  if (automations) {
+    await store.execute(runAutomations, undefined, systemCtx)
+    await closeAbandonedPix(deps)
+  }
   const settle = (id: string, status: 'sent' | 'failed' | 'queued', attempts?: number, error?: string) =>
     store.execute(settleMessage, { id, status, attempts, error }, systemCtx)
   const toNotification = (m: OutboxMessage): Notification => ({ channel: m.channel, to: m.recipient, subject: m.subject, body: m.body })
@@ -184,6 +193,28 @@ export async function deliver(deps: Deps, automations = false) {
     requeue: async (id, attempts, error) => void (await settle(id, 'queued', attempts, error)),
     markFailed: async (id, attempts, error) => void (await settle(id, 'failed', attempts, error)),
   })
+}
+
+/**
+ * No Pix, a assinatura nasce no Asaas antes do pagamento. Quem desistiu sai do app e precisa
+ * sair do Asaas também, senão continua recebendo cobranças.
+ */
+export async function closeAbandonedPix(deps: Deps) {
+  const pay = asaas(deps.env, deps.http)
+  if (!pay.configured) return
+  const { state } = await deps.store.current()
+  for (const { id, externalId } of remoteToClose(state.subscriptions)) {
+    try {
+      await pay.deleteSubscription(externalId)
+    } catch (e) {
+      // Já removida lá: só falta marcar. Outros erros tentam de novo na próxima rodada.
+      if (!(e instanceof AsaasError) || e.status !== 404) {
+        console.error('Não foi possível encerrar a assinatura no Asaas', externalId, e instanceof Error ? e.message : e)
+        continue
+      }
+    }
+    await deps.store.execute(markRemoteClosed, { subscriptionId: id }, systemCtx)
+  }
 }
 
 /** Quem dispara muitos pedidos seguidos é barrado. Sem o limitador configurado, segue sem ele. */
@@ -267,24 +298,64 @@ async function publicRoutes(path: string, req: Request, deps: Deps): Promise<Res
     if (!pay.configured) return fail('A assinatura online ainda não está disponível. Fale com a barbearia.', 503)
     const b = (await req.json().catch(() => null)) as Record<string, unknown> | null
     if (
-      !b || typeof b.name !== 'string' || typeof b.phone !== 'string' || typeof b.email !== 'string' || typeof b.planId !== 'string' ||
-      b.name.length > 100 || b.phone.length > 30 || b.email.length > 200
+      !b || typeof b.name !== 'string' || typeof b.phone !== 'string' || typeof b.email !== 'string' || typeof b.planId !== 'string' || typeof b.birthDate !== 'string' ||
+      b.birthDate.length > 10 || b.name.length > 100 || b.phone.length > 30 || b.email.length > 200
     ) {
       return fail('Dados inválidos.', 400)
     }
-    const started = await store.execute(startOnlineSubscription, { name: b.name, phone: b.phone, email: b.email, planId: b.planId }, ctxFactory(PUBLIC_ACTOR))
+    const method = b.method === 'pix' ? 'pix' : 'card'
+    const cpf = typeof b.cpf === 'string' ? b.cpf.replace(/\D/g, '') : ''
+    if (method === 'pix' && !validCpf(cpf)) return fail('Informe um CPF válido.', 400)
+    const started = await store.execute(startOnlineSubscription, {
+      name: b.name, phone: b.phone, email: b.email, birthDate: b.birthDate, planId: b.planId, method,
+    }, ctxFactory(PUBLIC_ACTOR))
     const { state } = await store.current()
     const now = new Date().toISOString()
-    const checkout = await pay.createCheckout({
-      subscriptionId: started.subscriptionId,
-      name: `${state.settings.shopName} · ${started.planName}`,
-      amountCents: started.amountCents,
-      firstDueDate: `${dateKey(now)} ${timeOf(now)}:00`,
-      appUrl: env.APP_URL ?? '',
-    })
-    await store.execute(linkGateway, { subscriptionId: started.subscriptionId, checkoutId: checkout.id }, systemCtx)
-    deps.later(deliver(deps))
-    return json({ checkoutUrl: pay.checkoutUrl(checkout.id) })
+    const description = `${state.settings.shopName} · ${started.planName}`
+    try {
+      if (method === 'card') {
+        const checkout = await pay.createCheckout({
+          subscriptionId: started.subscriptionId,
+          name: description,
+          amountCents: started.amountCents,
+          firstDueDate: `${dateKey(now)} ${timeOf(now)}:00`,
+          appUrl: env.APP_URL ?? '',
+        })
+        await store.execute(linkGateway, { subscriptionId: started.subscriptionId, checkoutId: checkout.id }, systemCtx)
+        deps.later(deliver(deps))
+        return json({ checkoutUrl: pay.checkoutUrl(checkout.id) })
+      }
+      const customer = await pay.customerFor({ name: b.name.trim(), cpf, email: started.email, phone: b.phone, externalReference: started.subscriptionId })
+      const remote = await pay.createPixSubscription({
+        customer, amountCents: started.amountCents, firstDueDate: dateKey(now), description, subscriptionId: started.subscriptionId,
+      })
+      const automatic = remote.pixAutomaticAuthorizationMode === 'OPTIONAL'
+      await store.execute(linkGateway, { subscriptionId: started.subscriptionId, externalId: remote.id, pixAutomatic: automatic ? 'offered' : 'off' }, systemCtx)
+      const first = (await pay.subscriptionPayments(remote.id)).data
+        .filter((p) => !PAID_STATUSES.includes(p.status))
+        .sort((x, y) => (x.dueDate ?? '').localeCompare(y.dueDate ?? ''))[0]
+      if (!first) throw new Error('Asaas não gerou a primeira cobrança da assinatura no Pix.')
+      const qr = await pay.pixQrCode(first.id)
+      deps.later(deliver(deps))
+      return json({
+        pix: { payload: qr.payload, image: qr.encodedImage, expiresAt: qr.expirationDate, automatic },
+        status: { id: started.subscriptionId, t: await signedToken('clube', started.subscriptionId, env) },
+      })
+    } catch (e) {
+      // Dado recusado pelo Asaas (CPF, e-mail): o cliente corrige e tenta de novo; a tentativa antiga sai.
+      if (e instanceof AsaasError && e.status === 400) return fail(e.description, 400)
+      throw e
+    }
+  }
+
+  if (path === '/api/public/club/status' && req.method === 'GET') {
+    const url = new URL(req.url)
+    const id = url.searchParams.get('id') ?? ''
+    if (!(await validCancelToken(id, url.searchParams.get('t'), env, 'clube'))) return fail('Link inválido.', 403)
+    const { state } = await store.current()
+    const sub = state.subscriptions.find((x) => x.id === id)
+    if (!sub) return fail('Assinatura não encontrada.', 404)
+    return json({ status: sub.status, pixAutomatic: sub.gateway?.pixAutomatic ?? null })
   }
 
   if (path === '/api/asaas/webhook' && req.method === 'POST') return asaasWebhook(req, deps)
@@ -334,8 +405,17 @@ async function asaasWebhook(req: Request, deps: Deps) {
     payment?: { id?: string }
     subscription?: { id?: string }
     checkout?: { id?: string }
+    authorization?: { id?: string; subscriptionId?: string | null }
+    paymentInstruction?: { id?: string; authorization?: { id?: string } }
   }
   const event = body.event ?? ''
+  const PIX_AUTH: Record<string, 'offered' | 'active' | 'off'> = {
+    PIX_AUTOMATIC_RECURRING_AUTHORIZATION_CREATED: 'offered',
+    PIX_AUTOMATIC_RECURRING_AUTHORIZATION_ACTIVATED: 'active',
+    PIX_AUTOMATIC_RECURRING_AUTHORIZATION_CANCELLED: 'off',
+    PIX_AUTOMATIC_RECURRING_AUTHORIZATION_EXPIRED: 'off',
+    PIX_AUTOMATIC_RECURRING_AUTHORIZATION_REFUSED: 'off',
+  }
 
   try {
     if ((event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED') && body.payment?.id) {
@@ -348,6 +428,8 @@ async function asaasWebhook(req: Request, deps: Deps) {
           subscriptionId: sub.externalReference ?? payment.externalReference ?? null,
           paymentId: payment.id,
           amountCents: Math.round(payment.value * 100),
+          // Taxa real que o Asaas descontou: é ela que entra no caixa e no DRE.
+          feeCents: typeof payment.netValue === 'number' ? Math.round((payment.value - payment.netValue) * 100) : null,
         }, systemCtx)
         deps.later(deliver(deps))
       }
@@ -364,6 +446,15 @@ async function asaasWebhook(req: Request, deps: Deps) {
           externalId: body.subscription.id, checkoutId: sub?.checkoutSession ?? null, subscriptionId: sub?.externalReference ?? null, status: 'cancelled',
         }, systemCtx)
       }
+    } else if (PIX_AUTH[event] && body.authorization?.id) {
+      // Não move dinheiro: só mostra se o débito automático está ligado. O token do aviso já foi conferido.
+      await store.execute(syncPixAuthorization, {
+        externalId: body.authorization.subscriptionId ?? null, authorizationId: body.authorization.id, status: PIX_AUTH[event],
+      }, systemCtx)
+      deps.later(deliver(deps))
+    } else if (event === 'PIX_AUTOMATIC_RECURRING_PAYMENT_INSTRUCTION_REFUSED' && body.paymentInstruction?.id && body.paymentInstruction.authorization?.id) {
+      await store.execute(recordPixRefused, { authorizationId: body.paymentInstruction.authorization.id, instructionId: body.paymentInstruction.id }, systemCtx)
+      deps.later(deliver(deps))
     } else if ((event === 'CHECKOUT_EXPIRED' || event === 'CHECKOUT_CANCELED') && body.checkout?.id) {
       // Só afeta quem ainda não pagou: assinatura ativa não é cancelada por esse aviso.
       await store.execute(syncGatewayStatus, { checkoutId: body.checkout.id, status: 'cancelled' }, systemCtx)
@@ -418,7 +509,10 @@ async function privateRoutes(path: string, req: Request, actor: Actor, deps: Dep
       const sub = state.subscriptions.find((x) => x.id === (b.input as { id?: string })?.id)
       const externalId = sub?.gateway?.externalId
       // O mês pago continua valendo no app; no Asaas a recorrência para já.
-      if (externalId) await asaas(env, deps.http).deleteSubscription(externalId)
+      if (externalId && !sub?.gateway?.remoteClosed) {
+        await asaas(env, deps.http).deleteSubscription(externalId)
+        await store.execute(markRemoteClosed, { subscriptionId: sub.id }, systemCtx)
+      }
     }
     return json({ ok: true })
   }

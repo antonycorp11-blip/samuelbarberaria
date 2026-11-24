@@ -7,6 +7,7 @@ import { formatBRL } from '@/domain/money'
 import { weekdayNames } from '@/domain/time'
 import type { PaymentMethod, Service } from '@/domain/types'
 import { METHOD_LABEL } from '@/domain/finance'
+import { SHOP_PIX_KEY } from '@/domain/pix'
 import {
   attempt, Badge, Button, Card, Field, Input, List, MoneyInput, PageHeader, PercentInput, Row, Section, Sheet, toast, Toggle,
 } from '@/ui/kit'
@@ -76,6 +77,12 @@ function RulesForm({ onClose }: { onClose: () => void }) {
           ))}
         </div>
       </div>
+      <Field label="Chave Pix" hint="Vai no QR Code do caixa e nas cobranças pelo WhatsApp. Deixe vazio para não mostrar.">
+        <Input autoCapitalize="none" autoComplete="off" value={form.pixKey ?? SHOP_PIX_KEY} onChange={(e) => set('pixKey', e.target.value.trim())} />
+      </Field>
+      <Field label="Cidade no Pix" hint="O cliente vê o nome da barbearia e esta cidade ao pagar.">
+        <Input value={form.pixCity ?? ''} onChange={(e) => set('pixCity', e.target.value)} />
+      </Field>
       {num('loyaltyStampsRequired', 'Selos para a recompensa')}
       {num('inactiveDays', 'Cliente inativo depois de (dias)')}
       {num('minAdvanceMinutes', 'Antecedência mínima online (minutos)')}

@@ -1,8 +1,11 @@
-# Clube com cartão automático (Asaas)
+# Clube com Pix Automático e cartão (Asaas)
 
-O cliente abre `/clube`, escolhe o plano e informa nome, celular e e-mail. Depois vai para a página de pagamento do Asaas, onde informa CPF e cartão. **Não precisa ter conta em lugar nenhum, e o e-mail pode ser qualquer um.**
+O cliente abre `/clube`, escolhe o plano, informa nome, celular, e-mail e data de nascimento e escolhe como pagar. **Não precisa ter conta em lugar nenhum, e o e-mail pode ser qualquer um.**
 
-Depois do primeiro pagamento, o Asaas cobra o cartão todo mês sozinho e avisa o servidor. O dinheiro cai na conta Asaas do Samuel, e ele transfere por Pix para onde quiser.
+- **Pix Automático:** o cliente informa o CPF e o app mostra o QR Code do primeiro mês. Ao pagar, o banco pergunta se ele autoriza o Pix Automático; com a autorização, os próximos meses saem sozinhos da conta dele. O dinheiro cai na hora.
+- **Cartão:** o cliente vai para a página de pagamento do Asaas e informa CPF e cartão. O Asaas cobra o cartão todo mês; o dinheiro fica disponível em 32 dias.
+
+O dinheiro cai na conta Asaas do Samuel, e ele transfere por Pix para onde quiser. Cada mensalidade entra no caixa com a taxa real que o Asaas descontou.
 
 O app nunca vê o cartão. Cada aviso tem o token secreto conferido, e a cobrança é consultada de novo na API do Asaas antes de qualquer gravação.
 
@@ -25,7 +28,9 @@ No painel, vá em **Integrações > Webhooks** e crie um webhook:
 - **URL:** `https://samuelbarberaria.antonycorp11.workers.dev/api/asaas/webhook`
 - **Token de autenticação:** invente um com mais de 32 caracteres e guarde.
 - **Versão da API:** v3. **Tipo de envio:** sequencial.
-- **Eventos:** de cobranças (`PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED`, `PAYMENT_REFUNDED`, `PAYMENT_CHARGEBACK_REQUESTED`), de assinaturas (`SUBSCRIPTION_DELETED`, `SUBSCRIPTION_INACTIVATED`) e de checkout (`CHECKOUT_EXPIRED`, `CHECKOUT_CANCELED`).
+- **Eventos:** de cobranças (`PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED`, `PAYMENT_REFUNDED`, `PAYMENT_CHARGEBACK_REQUESTED`), de assinaturas (`SUBSCRIPTION_DELETED`, `SUBSCRIPTION_INACTIVATED`), de checkout (`CHECKOUT_EXPIRED`, `CHECKOUT_CANCELED`) e de Pix Automático (`PIX_AUTOMATIC_RECURRING_AUTHORIZATION_CREATED`, `_ACTIVATED`, `_CANCELLED`, `_EXPIRED`, `_REFUSED` e `PIX_AUTOMATIC_RECURRING_PAYMENT_INSTRUCTION_REFUSED`).
+
+O script `scripts/setup-asaas.sh` faz os passos 2 a 4 de uma vez: pede a chave escondida, cria o token, grava os dois no servidor e cria (ou atualiza) o webhook com todos esses eventos.
 
 ### 4. Gravar as chaves
 
@@ -67,10 +72,19 @@ Em produção, faça uma assinatura real de valor baixo com o seu cartão, confi
 | Estorno ou contestação no Asaas | Sai da receita e a equipe recebe um aviso |
 | Cancelamento pelo app | Encerra a recorrência no Asaas na hora; o mês já pago continua valendo |
 | Desistiu no checkout | O link expira em 24 horas e a tentativa sai em até 2 dias |
+| Pix pago | Ativa como no cartão; aparece como **Pix Automático** quando o banco confirma a autorização, ou **Pix mensal** sem ela |
+| Cliente sem Pix Automático | O Asaas envia o Pix do mês por e-mail; o app quita sozinho quando o Pix cai |
+| Banco recusou o débito do mês | A equipe recebe um aviso; a mensalidade fica em aberto e segue a tolerância |
+| Cliente cancelou o Pix Automático no banco | A equipe recebe um aviso; a assinatura continua no Pix mensal |
+| Desistiu no Pix | A tentativa sai em até 2 dias e a assinatura é apagada no Asaas |
+
+## Calculadora de taxas
+
+Em **Mais → Taxas**, o Samuel digita um valor e vê quanto cai líquido no Pix, no cartão (com a data) e no cartão antecipado, além de uma tabela com os planos. Embaixo aparece o que caiu de verdade nas últimas mensalidades, com a taxa que o Asaas descontou. As taxas da calculadora vêm de **Editar**: copie de Asaas → Minha conta → Taxas e atualize quando a promoção dos 3 primeiros meses acabar.
 
 ## Limites desta versão
 
-- **Só cartão de crédito.** O checkout recorrente do Asaas não aceita Pix. O Pix Automático usa outro fluxo e pode ser uma segunda etapa.
+- **Pix Automático depende da conta.** O Asaas só libera para conta de empresa com CNPJ ativo há pelo menos 6 meses e chave Pix cadastrada. Sem isso, o app cria a assinatura no Pix mensal comum, e o cliente paga o Pix que chega por e-mail.
 - **Cliente que troca de cartão** faz isso pelo link que o Asaas envia ou pelo painel. O app não tem essa tela.
 - **Taxas:** confira na conta. O app usa a taxa de crédito dos Ajustes no DRE; ajuste para o valor real do Asaas.
 - **Preço novo de plano** vale para novas assinaturas. As antigas continuam no valor contratado.

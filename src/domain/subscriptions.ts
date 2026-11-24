@@ -33,12 +33,13 @@ export function createCharge(
   return charge
 }
 
-export function settleCharge(d: DbState, ctx: Ctx, charge: SubscriptionCharge, method: PaymentMethod) {
+/** feeCents, quando informado, é a taxa real cobrada (por exemplo, a que o Asaas descontou). */
+export function settleCharge(d: DbState, ctx: Ctx, charge: SubscriptionCharge, method: PaymentMethod, feeCents?: number) {
   const s = base(d)
   charge.status = 'paid'
   charge.paidAt = ctx.now
   charge.method = method
-  charge.feeCents = applyBps(charge.amountCents, s.settings.feeBps[method])
+  charge.feeCents = feeCents ?? applyBps(charge.amountCents, s.settings.feeBps[method])
   d.transactions.push({
     id: ctx.id(), type: 'in', category: 'assinatura', amountCents: charge.amountCents, method, at: ctx.now,
     description: 'Mensalidade do clube', saleId: null, reversalOf: null, reversed: false,

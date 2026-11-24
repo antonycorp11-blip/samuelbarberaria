@@ -7,6 +7,7 @@ import AgendaPage from '@/pages/Agenda'
 import ClientDetailPage from '@/pages/ClientDetail'
 import ClientsPage from '@/pages/Clients'
 import ClubPage from '@/pages/Club'
+import FeesPage from '@/pages/Fees'
 import FinancePage from '@/pages/Finance'
 import HomePage from '@/pages/Home'
 import LoginPage from '@/pages/Login'
@@ -100,7 +101,8 @@ export default function App() {
           <Route path="equipe" element={<TeamPage />} />
           <Route path="financeiro" element={<OwnerOnly><FinancePage /></OwnerOnly>} />
           <Route path="estoque" element={<OwnerOnly><StockPage /></OwnerOnly>} />
-          <Route path="clube" element={<OwnerOnly><ClubPage /></OwnerOnly>} />
+          <Route path="assinaturas" element={<OwnerOnly><ClubPage /></OwnerOnly>} />
+          <Route path="taxas" element={<OwnerOnly><FeesPage /></OwnerOnly>} />
           <Route path="marketing" element={<OwnerOnly><MarketingPage /></OwnerOnly>} />
           <Route path="relatorios" element={<OwnerOnly><ReportsPage /></OwnerOnly>} />
           <Route path="config" element={<SettingsPage />} />

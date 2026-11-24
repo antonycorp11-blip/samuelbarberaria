@@ -8,7 +8,7 @@ import { checkout } from '../src/domain/sales'
 import { applyChanges, diffState, viewFor, type Change } from '../src/domain/sync'
 import { addDays, dateKey, toISO } from '../src/domain/time'
 import { emptyState, type DbState, type Message } from '../src/domain/types'
-import { deliver, describeError, handleApi, sendPush, type Deps, type Env, type Notification } from '../worker/api'
+import { closeAbandonedPix, deliver, describeError, handleApi, sendPush, type Deps, type Env, type Notification } from '../worker/api'
 import { renderEmail } from '../worker/email'
 import { isAccountProblem, MAX_ATTEMPTS, processOutbox, type OutboxDeps, type OutboxMessage } from '../worker/outbox'
 import { createSession, readSession } from '../worker/session'
@@ -58,13 +58,41 @@ const env: Env = {
 class FakeAsaas {
   checkouts = new Map<string, { id: string; externalReference: string; value: number; paid: boolean }>()
   subscriptions = new Map<string, { id: string; status: string; deleted: boolean; checkoutSession: string; externalReference: string | null; value: number }>()
-  payments = new Map<string, { id: string; status: string; value: number; subscription: string; externalReference: string | null }>()
+  payments = new Map<string, { id: string; status: string; value: number; netValue?: number; dueDate?: string; subscription: string; externalReference: string | null }>()
+  customers = new Map<string, { id: string; cpfCnpj: string; name: string }>()
+  pixSubs: { body: Record<string, unknown> }[] = []
+  /** Conta sem Pix Automático: o Asaas recusa a oferta. */
+  pixAutomaticAllowed = true
   calls: string[] = []
   apiKeys = new Set<string>()
   handle(url: string, init: { method?: string; body?: string; headers?: Record<string, string> }) {
     const path = url.replace('https://api.asaas.com/v3', '')
     this.calls.push(`${init.method ?? 'GET'} ${path}`)
     this.apiKeys.add(init.headers?.access_token ?? '')
+    const customerQuery = path.match(/^\/customers\?cpfCnpj=(\d+)/)
+    if (customerQuery) return Response.json({ data: [...this.customers.values()].filter((c) => c.cpfCnpj === customerQuery[1]) })
+    if (path === '/customers' && init.method === 'POST') {
+      const b = JSON.parse(init.body ?? '{}') as { cpfCnpj: string; name: string }
+      const id = `cus_${this.customers.size + 1}`
+      this.customers.set(id, { id, cpfCnpj: b.cpfCnpj, name: b.name })
+      return Response.json({ id })
+    }
+    if (path === '/subscriptions' && init.method === 'POST') {
+      const b = JSON.parse(init.body ?? '{}') as Record<string, unknown>
+      if (b.billingType !== 'PIX' || b.cycle !== 'MONTHLY' || !this.customers.has(b.customer as string)) return Response.json({ errors: [{ description: 'inválido' }] }, { status: 400 })
+      if (b.pixAutomaticAuthorizationMode === 'OPTIONAL' && !this.pixAutomaticAllowed) {
+        return Response.json({ errors: [{ code: 'invalid_object', description: 'Você não possui permissão para utilizar este recurso.' }] }, { status: 400 })
+      }
+      this.pixSubs.push({ body: b })
+      const id = `sub_${this.subscriptions.size + 1}`
+      this.subscriptions.set(id, { id, status: 'ACTIVE', deleted: false, checkoutSession: '', externalReference: b.externalReference as string, value: b.value as number })
+      this.charge(id, 'PENDING', b.nextDueDate as string)
+      return Response.json({ id, status: 'ACTIVE', pixAutomaticAuthorizationMode: b.pixAutomaticAuthorizationMode, externalReference: b.externalReference })
+    }
+    const subPayments = path.match(/^\/subscriptions\/(.+)\/payments$/)
+    if (subPayments) return Response.json({ data: [...this.payments.values()].filter((p) => p.subscription === subPayments[1]) })
+    const qr = path.match(/^\/payments\/(.+)\/pixQrCode$/)
+    if (qr) return Response.json({ encodedImage: 'aW1hZ2Vt', payload: `00020126pix-${qr[1]}`, expirationDate: '2027-03-02 23:59:59' })
     if (path === '/checkouts' && init.method === 'POST') {
       const b = JSON.parse(init.body ?? '{}') as { externalReference: string; items: { value: number }[]; chargeTypes: string[]; billingTypes: string[] }
       if (!b.chargeTypes.includes('RECURRENT') || b.billingTypes.join() !== 'CREDIT_CARD') return Response.json({ errors: [{ description: 'inválido' }] }, { status: 400 })
@@ -98,10 +126,10 @@ class FakeAsaas {
     return id
   }
   /** Uma cobrança da assinatura no cartão. */
-  charge(subscriptionId: string, status = 'CONFIRMED') {
+  charge(subscriptionId: string, status = 'CONFIRMED', dueDate?: string) {
     const s = this.subscriptions.get(subscriptionId)!
     const id = `pay_${this.payments.size + 1}`
-    this.payments.set(id, { id, status, value: s.value, subscription: subscriptionId, externalReference: null })
+    this.payments.set(id, { id, status, value: s.value, dueDate, subscription: subscriptionId, externalReference: null })
     return id
   }
 }
@@ -536,7 +564,7 @@ describe('clube pelo Asaas', () => {
     const st = await s.state(owner)
     await s.call('/api/command', { token: owner, body: { name: 'upsertPlan', input: { name: 'Clube Corte', priceCents: 12900, visitsPerCycle: 4, serviceIds: [st.services[0]!.id], productDiscountBps: 1000, benefits: [] } } })
     const planId = (await s.state(owner)).plans[0]!.id
-    const subscribe = () => s.call('/api/public/club/subscribe', { body: { name: 'Carlos Novo', phone: '11966665555', email: 'qualquer@email.com', planId } })
+    const subscribe = () => s.call('/api/public/club/subscribe', { body: { name: 'Carlos Novo', phone: '11966665555', email: 'qualquer@email.com', birthDate: '1990-03-15', planId } })
     /** Cliente pagou no checkout e o cartão foi aprovado. */
     const pay = async (checkoutId = 'chk-1') => {
       const asaasSub = s.gateway.completeCheckout(checkoutId)
@@ -667,6 +695,137 @@ describe('clube pelo Asaas', () => {
     expect(pub.plans.map((p) => p.name)).toEqual(['Clube Corte'])
     expect(pub.subscriptions).toEqual([])
     expect(JSON.stringify(pub)).not.toContain('qualquer@email.com')
+  })
+})
+
+describe('clube no Pix Automático', () => {
+  async function withPix() {
+    const s = server()
+    const owner = await s.install()
+    const st = await s.state(owner)
+    await s.call('/api/command', { token: owner, body: { name: 'upsertPlan', input: { name: 'Clube Corte', priceCents: 12900, visitsPerCycle: 4, serviceIds: [st.services[0]!.id], productDiscountBps: 1000, benefits: [] } } })
+    const planId = (await s.state(owner)).plans[0]!.id
+    const subscribe = (extra: Record<string, unknown> = {}) => s.call('/api/public/club/subscribe', {
+      body: { name: 'Paula Pix', phone: '11977776666', email: 'paula@teste.com', birthDate: '1992-07-20', planId, method: 'pix', cpf: '529.982.247-25', ...extra },
+    })
+    /** O cliente pagou o QR Code: o Asaas recebe o Pix e desconta a taxa. */
+    const payPix = async (paymentId = 'pay_1', netValue = 128.01) => {
+      const p = s.gateway.payments.get(paymentId)!
+      p.status = 'RECEIVED'
+      p.netValue = netValue
+      expect(await s.webhook(asaasWebhook('PAYMENT_RECEIVED', { payment: { id: paymentId } }))).toBe(200)
+    }
+    return { s, owner, planId, subscribe, payPix }
+  }
+
+  it('assinar no Pix cria cliente e assinatura mensal no Asaas com a oferta e devolve o QR Code', async () => {
+    const { s, owner, subscribe } = await withPix()
+    const r = await subscribe()
+    expect(r.status).toBe(200)
+    expect(r.data.pix).toMatchObject({ payload: '00020126pix-pay_1', image: 'aW1hZ2Vt', automatic: true })
+    expect(r.data.checkoutUrl).toBeUndefined()
+    const st = await s.state(owner)
+    const sub = st.subscriptions[0]!
+    expect(sub).toMatchObject({ status: 'pending', gateway: { method: 'pix', externalId: 'sub_1', pixAutomatic: 'offered' } })
+    expect(s.gateway.pixSubs[0]!.body).toMatchObject({ billingType: 'PIX', cycle: 'MONTHLY', value: 129, externalReference: sub.id, pixAutomaticAuthorizationMode: 'OPTIONAL' })
+    expect(s.gateway.customers.get('cus_1')?.cpfCnpj).toBe('52998224725')
+  })
+
+  it('CPF inválido é recusado antes de falar com o Asaas', async () => {
+    const { s, owner, subscribe } = await withPix()
+    const r = await subscribe({ cpf: '111.111.111-11' })
+    expect(r.status).toBe(400)
+    expect((await s.state(owner)).subscriptions).toEqual([])
+    expect(s.gateway.calls).toEqual([])
+  })
+
+  it('conta sem Pix Automático cai no Pix mensal comum, sem quebrar a assinatura', async () => {
+    const { s, owner, subscribe } = await withPix()
+    s.gateway.pixAutomaticAllowed = false
+    const r = await subscribe()
+    expect(r.data.pix).toMatchObject({ automatic: false })
+    expect((await s.state(owner)).subscriptions[0]!.gateway).toMatchObject({ method: 'pix', pixAutomatic: 'off' })
+  })
+
+  it('o mesmo CPF reaproveita o cliente no Asaas', async () => {
+    const { s, subscribe } = await withPix()
+    await subscribe()
+    await subscribe()
+    expect(s.gateway.customers.size).toBe(1)
+  })
+
+  it('Pix pago ativa a assinatura, entra como Pix e usa a taxa real do Asaas', async () => {
+    const { s, owner, subscribe, payPix } = await withPix()
+    const r = await subscribe()
+    await payPix()
+    const st = await s.state(owner)
+    expect(st.subscriptions[0]).toMatchObject({ status: 'active' })
+    expect(st.charges[0]).toMatchObject({ status: 'paid', method: 'pix', amountCents: 12900, feeCents: 99, gatewayPaymentId: 'pay_1' })
+    expect(st.transactions.find((t) => t.category === 'taxa_pagamento')).toMatchObject({ amountCents: 99, method: 'pix' })
+    expect(s.mails.find((m) => m.subject === 'Bem-vindo ao clube! 👑')?.body).toContain('Pix Automático')
+    const status = await s.call(`/api/public/club/status?id=${r.data.status.id}&t=${r.data.status.t}`)
+    expect(status.data).toMatchObject({ status: 'active', pixAutomatic: 'offered' })
+  })
+
+  it('a página só consulta a situação com o link assinado', async () => {
+    const { s, subscribe } = await withPix()
+    const r = await subscribe()
+    expect((await s.call(`/api/public/club/status?id=${r.data.status.id}&t=errado`)).status).toBe(403)
+    expect((await s.call(`/api/public/club/status?id=${r.data.status.id}&t=${r.data.status.t}`)).data.status).toBe('pending')
+  })
+
+  it('autorização do Pix Automático: aprovada, fora de ordem e cancelada pelo cliente', async () => {
+    const { s, owner, subscribe, payPix } = await withPix()
+    await subscribe()
+    await payPix()
+    const gw = async () => (await s.state(owner)).subscriptions[0]!.gateway
+    await s.webhook(asaasWebhook('PIX_AUTOMATIC_RECURRING_AUTHORIZATION_ACTIVATED', { authorization: { id: 'auth_1', subscriptionId: 'sub_1', status: 'ACTIVE' } }))
+    expect(await gw()).toMatchObject({ pixAutomatic: 'active', pixAuthorizationId: 'auth_1' })
+    // O aviso de criação chegou atrasado: não volta para "aguardando".
+    await s.webhook(asaasWebhook('PIX_AUTOMATIC_RECURRING_AUTHORIZATION_CREATED', { authorization: { id: 'auth_1', subscriptionId: 'sub_1', status: 'CREATED' } }))
+    expect((await gw())?.pixAutomatic).toBe('active')
+    // No cancelamento o Asaas pode mandar sem a assinatura: acha pela autorização.
+    await s.webhook(asaasWebhook('PIX_AUTOMATIC_RECURRING_AUTHORIZATION_CANCELLED', { authorization: { id: 'auth_1', subscriptionId: null, status: 'CANCELLED' } }))
+    expect((await gw())?.pixAutomatic).toBe('off')
+    expect(s.pushes.some((p) => p.includes('Paula Pix cancelou o Pix Automático'))).toBe(true)
+    expect((await s.state(owner)).subscriptions[0]?.status).toBe('active')
+  })
+
+  it('débito recusado pelo banco avisa a equipe uma vez', async () => {
+    const { s, subscribe, payPix } = await withPix()
+    await subscribe()
+    await payPix()
+    await s.webhook(asaasWebhook('PIX_AUTOMATIC_RECURRING_AUTHORIZATION_ACTIVATED', { authorization: { id: 'auth_1', subscriptionId: 'sub_1' } }))
+    const refused = asaasWebhook('PIX_AUTOMATIC_RECURRING_PAYMENT_INSTRUCTION_REFUSED', { paymentInstruction: { id: 'ins_1', status: 'REFUSED', authorization: { id: 'auth_1' } } })
+    expect(await s.webhook(refused)).toBe(200)
+    await s.webhook(asaasWebhook('PIX_AUTOMATIC_RECURRING_PAYMENT_INSTRUCTION_REFUSED', { paymentInstruction: { id: 'ins_1', authorization: { id: 'auth_1' } } }))
+    expect(s.pushes.filter((p) => p.includes('recusou o débito')).length).toBe(1)
+  })
+
+  it('quem desistiu do Pix sai do Asaas também, uma vez só', async () => {
+    const { s, owner, subscribe } = await withPix()
+    await subscribe()
+    // Tentou de novo: a primeira tentativa sai do app e precisa sair do Asaas.
+    await subscribe()
+    await closeAbandonedPix(s.deps)
+    expect(s.gateway.subscriptions.get('sub_1')?.deleted).toBe(true)
+    expect(s.gateway.subscriptions.get('sub_2')?.deleted).toBe(false)
+    const st = await s.state(owner)
+    expect(st.subscriptions.find((x) => x.gateway?.externalId === 'sub_1')?.gateway?.remoteClosed).toBe(true)
+    const deletes = () => s.gateway.calls.filter((c) => c.startsWith('DELETE')).length
+    const before = deletes()
+    await closeAbandonedPix(s.deps)
+    expect(deletes()).toBe(before)
+  })
+
+  it('cancelar pelo app encerra a assinatura do Pix no Asaas', async () => {
+    const { s, owner, subscribe, payPix } = await withPix()
+    await subscribe()
+    await payPix()
+    const sub = (await s.state(owner)).subscriptions[0]!
+    await s.call('/api/command', { token: owner, body: { name: 'cancelSubscription', input: { id: sub.id } } })
+    expect(s.gateway.subscriptions.get('sub_1')?.deleted).toBe(true)
+    expect((await s.state(owner)).subscriptions[0]!.gateway?.remoteClosed).toBe(true)
   })
 })
 
