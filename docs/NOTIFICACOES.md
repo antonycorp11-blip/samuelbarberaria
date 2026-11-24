@@ -45,6 +45,28 @@ npx wrangler secret put ONESIGNAL_REST_API_KEY
 
 `TEST_KEY` é uma senha que você inventa. Ela só é pedida uma vez, para criar a conta do dono.
 
+## Remetente com o domínio da barbearia (Brevo, grátis)
+
+Por padrão os e-mails saem do Gmail da barbearia. Com domínio próprio, dá para sair de `contato@dominio` pelo plano grátis do Brevo (300 e-mails por dia), sem mexer no código.
+
+1. Crie a conta em [brevo.com](https://www.brevo.com), no plano grátis.
+2. Em **Senders, Domains & Dedicated IPs > Domains**, adicione o domínio. O Brevo mostra alguns registros (código do Brevo, DKIM e DMARC). Se aparecer a opção de configurar automaticamente com a Cloudflare, use; senão, copie cada registro em Cloudflare > o domínio > **DNS > Add record**. Espere o Brevo mostrar o domínio como autenticado.
+3. Em **Senders**, adicione `contato@dominio` com o nome da barbearia.
+4. Em **SMTP & API > SMTP**, gere uma chave SMTP. Anote o **Login** (termina em `@smtp-brevo.com`); a chave aparece uma vez só.
+5. Grave o login e a chave no lugar dos do Gmail (cole quando cada comando pedir):
+
+```bash
+npx wrangler secret put GMAIL_USER
+```
+
+```bash
+npx wrangler secret put GMAIL_APP_PASSWORD
+```
+
+6. Em `wrangler.jsonc`, em `vars`, coloque `"SMTP_HOST": "smtp-relay.brevo.com"`, `"MAIL_FROM": "contato@dominio"` e `"MAIL_FROM_NAME": "Samuel Barbearia"`, e publique.
+
+Para **receber** no `contato@dominio` (quando o cliente responder um e-mail), ligue o **Email Routing** da Cloudflare no domínio e encaminhe para o Gmail do Samuel. Também é grátis.
+
 ## 4. Testar no celular
 
 Abra **Mais > Ajustes > Testar e-mail e push**. Os dois selos devem aparecer verdes.

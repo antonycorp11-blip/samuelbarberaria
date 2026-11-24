@@ -37,6 +37,8 @@ export interface Env extends AsaasEnv {
   GMAIL_USER?: string
   GMAIL_APP_PASSWORD?: string
   MAIL_FROM_NAME?: string
+  /** Remetente que o cliente vê. Sem valor, é o próprio GMAIL_USER. */
+  MAIL_FROM?: string
   ONESIGNAL_APP_ID?: string
   ONESIGNAL_REST_API_KEY?: string
   APP_URL?: string

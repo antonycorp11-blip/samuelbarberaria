@@ -59,3 +59,26 @@ export function renderEmail(n: { subject: string; body: string }, appUrl: string
 </body>
 </html>`
 }
+
+/**
+ * Servidor de envio e remetente. Porta 465 com TLS direto (a Cloudflare só bloqueia a 25).
+ * Serve para o Gmail e para serviços como o Brevo: muda só o servidor, o login e o remetente.
+ */
+export function mailSettings(env: {
+  SMTP_HOST?: string; SMTP_PORT?: string; SMTP_SECURE?: string; GMAIL_USER?: string; GMAIL_APP_PASSWORD?: string
+  MAIL_FROM?: string; MAIL_FROM_NAME?: string
+}) {
+  const secure = env.SMTP_SECURE !== 'false'
+  return {
+    smtp: {
+      host: env.SMTP_HOST || 'smtp.gmail.com',
+      port: Number(env.SMTP_PORT || 465),
+      secure,
+      startTls: secure,
+      credentials: { username: env.GMAIL_USER ?? '', password: env.GMAIL_APP_PASSWORD ?? '' },
+      authType: ['plain', 'login'] as ('plain' | 'login')[],
+    },
+    // No Gmail o remetente é o próprio login; no Brevo o login é interno e o remetente é o e-mail do domínio.
+    from: { name: env.MAIL_FROM_NAME || 'Samuel Barber Shop', email: env.MAIL_FROM || env.GMAIL_USER || '' },
+  }
+}
