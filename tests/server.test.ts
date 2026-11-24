@@ -360,6 +360,7 @@ describe('acesso', () => {
     const s = server()
     const owner = await s.install()
     const barberId = (await s.state(owner)).barbers[0]!.id
+    await s.db.setStaff({ email: 'b@teste.com', password: 'senha-barbeiro', role: 'barber', barberId, name: 'x' })
     const barber = await createSession({ role: 'barber', barberId, name: 'x' }, 'b@teste.com', 'sessao')
     const r = await s.call('/api/command', { token: barber, body: { name: 'addTransaction', input: { type: 'out', category: 'aluguel', amountCents: 100, method: 'pix', description: '' }, actor: { role: 'owner' } } })
     expect(r.status).toBe(422)
@@ -830,6 +831,33 @@ describe('clube no Pix Automático', () => {
 })
 
 describe('pente fino de segurança', () => {
+  it('login apagado perde o acesso na hora, mesmo com a sessão ainda válida', async () => {
+    const s = server()
+    const owner = await s.install()
+    expect((await s.call('/api/sync?since=0', { token: owner })).status).toBe(200)
+    s.db.staff.clear()
+    expect((await s.call('/api/sync?since=0', { token: owner })).status).toBe(401)
+  })
+
+  it('banco zerado mantendo os serviços: instalar de novo põe o dono na equipe, sem duplicar serviços', async () => {
+    const s = server()
+    const owner = await s.install()
+    const before = await s.state(owner)
+    // Zera como no banco real: tudo apagado, menos os serviços, que ficam sem preço.
+    const wipe = [
+      ...before.barbers.map((b) => ({ c: 'barbers', id: b.id, data: null })),
+      ...before.services.map((x) => ({ c: 'services', id: x.id, data: { ...x, priceCents: 0 } })),
+    ]
+    await s.db.push(s.db.version, wipe)
+    s.db.staff.clear()
+    const again = await s.call('/api/auth/setup', { body: { key: 'instalar', email: 'samuel@teste.com', password: 'senha-forte', name: 'Samuel Lucas' } })
+    expect(again.status).toBe(200)
+    const st = await s.state(again.data.token as string)
+    expect(st.barbers.map((b) => b.name)).toEqual(['Samuel Lucas'])
+    expect(st.services.length).toBe(before.services.length)
+    expect(st.services.every((x) => x.priceCents === 0)).toBe(true)
+  })
+
   it('barbeiro desativado perde o acesso na hora', async () => {
     const s = server()
     const owner = await s.install()

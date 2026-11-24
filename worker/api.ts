@@ -3,6 +3,7 @@ import { buildStarter } from '../src/data/starter'
 import { bookOnline, cancelAppointment, OCCUPYING } from '../src/domain/agenda'
 import { runAutomations } from '../src/domain/automations'
 import { COMMANDS } from '../src/domain/commands'
+import { upsertBarber } from '../src/domain/team'
 import { SYSTEM_ACTOR, type Ctx } from '../src/domain/engine'
 import { DomainError } from '../src/domain/errors'
 import { CANCEL_MARKER } from '../src/domain/messages'
@@ -366,8 +367,14 @@ async function publicRoutes(path: string, req: Request, deps: Deps): Promise<Res
     if ((await db.staffCount()) > 0) return fail('O sistema já foi instalado.', 409)
     if (!b.email || !b.password || !b.name?.trim()) return fail('Preencha nome, e-mail e senha.', 400)
     // Os dados vêm antes da conta: se algo falhar aqui, dá para instalar de novo.
-    const { version } = await store.current()
+    const { state, version } = await store.current()
     if (version === 0) await store.seed(buildStarter(new Date().toISOString(), b.name.trim()))
+    // Banco zerado mantendo os serviços: o dono entra na equipe para já aparecer na agenda.
+    else if (!state.barbers.some((x) => x.active)) {
+      await store.execute(upsertBarber, {
+        name: b.name.trim(), email: '', phone: '', serviceBps: 5000, productBps: 1000, daysOff: [0], breakStart: null, breakEnd: null,
+      }, systemCtx)
+    }
     await db.setStaff({ email: b.email, password: b.password, role: 'owner', barberId: null, name: b.name.trim() })
     return login(b.email, b.password, deps)
   }
@@ -568,6 +575,8 @@ export async function handleApi(req: Request, deps: Deps): Promise<Response> {
     const session = await readSession(token, deps.env.SESSION_SECRET as string)
     if (!session) return fail('Sessão expirada. Entre de novo.', 401)
     const { email, ...actor } = session
+    // Login apagado perde o acesso na hora, mesmo com a sessão de 30 dias ainda válida.
+    if (!(await deps.db.staffInfo(email))) return fail('Acesso removido. Entre de novo.', 401)
     // Barbeiro desativado perde o acesso na hora, mesmo com a sessão de 30 dias ainda válida.
     if (actor.role === 'barber') {
       const { state } = await deps.store.current()
