@@ -510,13 +510,20 @@ async function privateRoutes(path: string, req: Request, actor: Actor, deps: Dep
   if (path === '/api/products/lookup' && req.method === 'GET') {
     const gtin = new URL(req.url).searchParams.get('gtin') ?? ''
     if (!validGtin(gtin)) return fail('Código de barras inválido.', 400)
-    if (!env.COSMOS_TOKEN) return json({ found: false, reason: 'not_configured' })
+    // Espaço ou quebra de linha colados junto com o token fazem a Cosmos recusar.
+    const token = env.COSMOS_TOKEN?.trim()
+    if (!token) return json({ found: false, reason: 'not_configured' })
     try {
       const res = await http(`https://api.cosmos.bluesoft.com.br/gtins/${gtin}.json`, {
-        headers: { 'X-Cosmos-Token': env.COSMOS_TOKEN, 'User-Agent': 'SamuelBarberShop/1.0', 'Content-Type': 'application/json' },
+        // User-Agent pedido pela documentação da Cosmos.
+        headers: { 'X-Cosmos-Token': token, 'User-Agent': 'Cosmos-API-Request', 'Content-Type': 'application/json' },
       })
+      // Registro sem o token, para descobrir por que uma busca voltou vazia.
+      console.log('Cosmos', gtin, res.status)
       if (res.status === 404) return json({ found: false })
-      if (!res.ok) return json({ found: false, reason: 'unavailable' })
+      if (res.status === 401 || res.status === 403) return json({ found: false, reason: 'token', status: res.status })
+      if (res.status === 429) return json({ found: false, reason: 'limit', status: res.status })
+      if (!res.ok) return json({ found: false, reason: 'unavailable', status: res.status })
       const data = await res.json() as { description?: unknown; brand?: { name?: unknown } | null; thumbnail?: unknown }
       return json({ found: true, name: typeof data.description === 'string' ? data.description : '', brand: typeof data.brand?.name === 'string' ? data.brand.name : '', imageUrl: typeof data.thumbnail === 'string' ? data.thumbnail : null })
     } catch {

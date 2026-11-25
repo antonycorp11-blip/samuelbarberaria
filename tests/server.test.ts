@@ -191,7 +191,7 @@ describe('busca de produto no Cosmos', () => {
     let called = false
     s.deps.http = (async (url: string | URL | Request, init?: RequestInit) => {
       expect(String(url)).toBe('https://api.cosmos.bluesoft.com.br/gtins/7891234567895.json')
-      expect(init?.headers).toMatchObject({ 'X-Cosmos-Token': 'token-teste', 'User-Agent': 'SamuelBarberShop/1.0', 'Content-Type': 'application/json' })
+      expect(init?.headers).toMatchObject({ 'X-Cosmos-Token': 'token-teste', 'User-Agent': 'Cosmos-API-Request', 'Content-Type': 'application/json' })
       called = true
       return Response.json({ description: 'Pomada modeladora', brand: { name: 'Marca' }, thumbnail: 'https://img.test/pomada.jpg' })
     }) as typeof fetch
@@ -210,9 +210,18 @@ describe('busca de produto no Cosmos', () => {
     s.deps.http = (async () => Response.json({}, { status: 404 })) as typeof fetch
     expect((await s.call(path, { token: owner })).data).toEqual({ found: false })
     s.deps.http = (async () => Response.json({}, { status: 429 })) as typeof fetch
-    expect((await s.call(path, { token: owner })).data).toEqual({ found: false, reason: 'unavailable' })
+    expect((await s.call(path, { token: owner })).data).toEqual({ found: false, reason: 'limit', status: 429 })
+    s.deps.http = (async () => Response.json({ message: 'Token Inválido' }, { status: 401 })) as typeof fetch
+    expect((await s.call(path, { token: owner })).data).toEqual({ found: false, reason: 'token', status: 401 })
     s.deps.http = (async () => Response.json({}, { status: 503 })) as typeof fetch
-    expect((await s.call(path, { token: owner })).data).toEqual({ found: false, reason: 'unavailable' })
+    expect((await s.call(path, { token: owner })).data).toEqual({ found: false, reason: 'unavailable', status: 503 })
+    // Token colado com espaço ou quebra de linha continua funcionando.
+    s.deps.env = { ...s.deps.env, COSMOS_TOKEN: ' token-teste\n' }
+    s.deps.http = (async (_u: unknown, init?: RequestInit) => {
+      expect((init?.headers as Record<string, string>)['X-Cosmos-Token']).toBe('token-teste')
+      return Response.json({}, { status: 404 })
+    }) as typeof fetch
+    expect((await s.call(path, { token: owner })).data).toEqual({ found: false })
     s.deps.http = (async () => { throw new Error('fora do ar') }) as typeof fetch
     expect((await s.call(path, { token: owner })).data).toEqual({ found: false, reason: 'unavailable' })
   })

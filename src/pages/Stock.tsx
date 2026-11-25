@@ -33,11 +33,20 @@ function ProductForm({ product, initialBarcode, onClose, onCreated }: { product?
     }
     setLookupMessage('Buscando produto...')
     try {
-      const result = await api<{ found: boolean; name?: string; brand?: string }>(`/api/products/lookup?gtin=${code}`)
+      const result = await api<{ found: boolean; name?: string; brand?: string; reason?: string; status?: number }>(`/api/products/lookup?gtin=${code}`)
       if (result.found && result.name) {
         setName([result.brand, result.name].filter(Boolean).join(' · '))
         setLookupMessage('Nome preenchido. Você pode editar.')
-      } else setLookupMessage('Produto não encontrado. Digite o nome.')
+      } else {
+        // Cada motivo tem sua mensagem: "não encontrado" só quando a Cosmos realmente não tem o produto.
+        const why: Record<string, string> = {
+          not_configured: 'Busca automática desligada: falta gravar o token da Cosmos.',
+          token: `A Cosmos recusou o token (código ${result.status}). Confira o token gravado.`,
+          limit: 'Limite de buscas da Cosmos atingido. Tente mais tarde.',
+          unavailable: `Cosmos indisponível agora${result.status ? ` (código ${result.status})` : ''}.`,
+        }
+        setLookupMessage(`${result.reason ? why[result.reason] ?? 'Busca indisponível.' : `A Cosmos não tem o código ${code}.`} Digite o nome.`)
+      }
     } catch {
       setLookupMessage('Busca indisponível. Digite o nome.')
     }
