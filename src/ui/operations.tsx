@@ -24,6 +24,7 @@ import type { Appointment, AppointmentStatus, DateKey, ID, ISO, PaymentMethod } 
 import {
   Avatar, Badge, Button, Chips, ConfirmSheet, cx, Field, IconButton, Input, MoneyInput, Row, Sheet, Textarea, Toggle, attempt, toast,
 } from './kit'
+import { EmailFix } from './emailFix'
 
 export const STATUS_LABEL: Record<AppointmentStatus, string> = {
   scheduled: 'Agendado', confirmed: 'Confirmado', in_progress: 'Em atendimento', completed: 'Concluído', cancelled: 'Cancelado', no_show: 'Faltou',
@@ -73,7 +74,7 @@ export function ClientPicker({ value, onChange }: { value: ID | null; onChange: 
       <div className="space-y-2 rounded-xl bg-raised p-3">
         <Input placeholder="Nome" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         <Input placeholder="Celular com DDD" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
-        <Input placeholder="E-mail (para lembretes)" inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <Input placeholder="E-mail (para lembretes)" inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} /><EmailFix email={email} onFix={setEmail} />
         <div className="grid grid-cols-2 gap-2">
           <Button variant="ghost" onClick={() => setAdding(false)}>Voltar</Button>
           <Button

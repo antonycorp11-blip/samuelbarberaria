@@ -7,6 +7,7 @@ import { dueForReturn, inactiveClients, lastVisits, upsertClient } from '@/domai
 import { brDate, dateKey, dayLabel } from '@/domain/time'
 import type { Client } from '@/domain/types'
 import { attempt, Avatar, Badge, Button, Empty, Field, IconButton, Input, List, PageHeader, Row, Segmented, Sheet, Textarea, Toggle } from '@/ui/kit'
+import { EmailFix } from '@/ui/emailFix'
 
 export function ClientForm({ client, onClose }: { client?: Client; onClose: () => void }) {
   const [name, setName] = useState(client?.name ?? '')
@@ -26,7 +27,7 @@ export function ClientForm({ client, onClose }: { client?: Client; onClose: () =
     <Sheet title={client ? 'Editar cliente' : 'Novo cliente'} onClose={onClose} footer={<Button variant="primary" block onClick={save}>Salvar</Button>}>
       <Field label="Nome"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
       <Field label="Celular com DDD"><Input inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
-      <Field label="E-mail" hint="Usado para confirmações e lembretes."><Input inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+      <Field label="E-mail" hint="Usado para confirmações e lembretes."><Input inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} /><EmailFix email={email} onFix={setEmail} /></Field>
       <Field label="Data de nascimento" hint={!birthDate && client?.birthday && !client.birthDate ? `${client.birthday.slice(3)}/${client.birthday.slice(0, 2)} (sem ano)` : undefined}><Input type="date" autoComplete="bday" min="1900-01-01" max={dateKey(nowISO())} value={birthDate} onChange={(e) => setBirthDate(e.target.value)} /></Field>
       <Field label="Observações"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Preferências do corte, alergias..." /></Field>
       <Toggle checked={optIn} onChange={setOptIn} label="Aceita receber promoções" hint="Exigido pela LGPD para campanhas." />

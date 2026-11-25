@@ -10,6 +10,7 @@ import type { Barber, ID, PaymentMethod } from '@/domain/types'
 import {
   attempt, Avatar, Badge, Button, Card, Chips, cx, Empty, Field, IconButton, Input, List, Meter, PageHeader, PercentInput, Row, Section, Sheet, Stat, toast, Toggle,
 } from '@/ui/kit'
+import { EmailFix } from '@/ui/emailFix'
 
 const METHODS = (Object.keys(METHOD_LABEL) as PaymentMethod[]).map((value) => ({ value, label: METHOD_LABEL[value] }))
 
@@ -35,7 +36,7 @@ function BarberForm({ barber, onClose }: { barber?: Barber; onClose: () => void 
   return (
     <Sheet title={barber ? 'Editar profissional' : 'Novo profissional'} onClose={onClose} footer={<Button variant="primary" block onClick={save}>Salvar</Button>}>
       <Field label="Nome"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-      <Field label="E-mail"><Input inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+      <Field label="E-mail"><Input inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} /><EmailFix email={email} onFix={setEmail} /></Field>
       <Field label="Celular"><Input inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
       <div className="grid grid-cols-2 gap-2">
         <Field label="Comissão serviços (%)"><PercentInput value={serviceBps} onChange={setServiceBps} /></Field>
@@ -81,7 +82,7 @@ function StaffAccess({ barberId, name, initialEmail }: { barberId: ID; name: str
   return (
     <div className="space-y-2 rounded-xl bg-raised p-3">
       <span className="block text-[13px] font-bold text-muted">Acesso ao app</span>
-      <Input type="email" autoCapitalize="none" autoComplete="off" placeholder="E-mail de login" value={email} onChange={(e) => setEmail(e.target.value)} />
+      <Input type="email" autoCapitalize="none" autoComplete="off" placeholder="E-mail de login" value={email} onChange={(e) => setEmail(e.target.value)} /><EmailFix email={email} onFix={setEmail} />
       <Input type="password" autoComplete="new-password" placeholder="Nova senha (mín. 8)" value={password} onChange={(e) => setPassword(e.target.value)} />
       <Button block disabled={!email || password.length < 8} onClick={() => void save()}>Salvar acesso</Button>
     </div>

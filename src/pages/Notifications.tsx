@@ -5,6 +5,7 @@ import { useDb } from '@/data/store'
 import { sendNow, serverStatus } from '@/integrations/notify'
 import { enablePush, pushStatus, type PushStatus } from '@/integrations/push'
 import { Badge, Button, Card, Field, Input, List, PageHeader, Row, Section, toast } from '@/ui/kit'
+import { EmailFix } from '@/ui/emailFix'
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : 'Falha no envio.')
 
@@ -51,7 +52,7 @@ export default function NotificationsPage() {
 
       <Section title="E-mail">
         <Card className="space-y-3 p-3.5">
-          <Field label="Enviar para"><Input inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" /></Field>
+          <Field label="Enviar para"><Input inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" /><EmailFix email={email} onFix={setEmail} /></Field>
           <Button
             variant="primary"
             block

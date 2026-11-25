@@ -7,6 +7,7 @@ import { planDaysLabel } from '@/domain/subscriptions'
 import { dateKey } from '@/domain/time'
 import { emptyState, type DbState, type ID } from '@/domain/types'
 import { Button, Card, cx, Field, Input, toast } from '@/ui/kit'
+import { EmailFix } from '@/ui/emailFix'
 
 type Method = 'pix' | 'card'
 
@@ -215,7 +216,7 @@ export default function PublicClubPage() {
           <Field label="Nome"><Input autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} /></Field>
           <Field label="Celular com DDD"><Input autoComplete="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
           <Field label="E-mail" hint="Para enviarmos a confirmação e os avisos do clube.">
-            <Input autoComplete="email" inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Input autoComplete="email" inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} /><EmailFix email={email} onFix={setEmail} />
           </Field>
           <Field label="Data de nascimento">
             <Input type="date" autoComplete="bday" min="1900-01-01" max={dateKey(nowISO())} value={birthDate} onChange={(e) => setBirthDate(e.target.value)} />

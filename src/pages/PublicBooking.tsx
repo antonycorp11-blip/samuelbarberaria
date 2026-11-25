@@ -6,6 +6,7 @@ import { formatBRL } from '@/domain/money'
 import { addDays, dateKey, dayLabel, timeOf, weekdayLabel } from '@/domain/time'
 import { emptyState, type DateKey, type DbState, type ID } from '@/domain/types'
 import { Button, Card, cx, Field, Input, toast, Toggle } from '@/ui/kit'
+import { EmailFix } from '@/ui/emailFix'
 
 type Step = 'services' | 'barber' | 'time' | 'details' | 'done'
 
@@ -242,7 +243,7 @@ export default function PublicBookingPage() {
             <>
               <Field label="Nome"><Input autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} /></Field>
               <Field label="Celular com DDD"><Input autoComplete="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
-              <Field label="E-mail" hint="Enviamos a confirmação e o lembrete por aqui."><Input autoComplete="email" inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+              <Field label="E-mail" hint="Enviamos a confirmação e o lembrete por aqui."><Input autoComplete="email" inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} /><EmailFix email={email} onFix={setEmail} /></Field>
               <Toggle checked={optIn} onChange={setOptIn} label="Quero receber promoções" />
             </>
           ) : (
