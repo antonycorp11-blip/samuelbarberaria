@@ -27,6 +27,23 @@ describe('agendamento', () => {
     expect(assertInvariants(w.state)).toEqual([])
   })
 
+  it('registro retroativo: só hoje, aparece na agenda e não manda "horário confirmado"', () => {
+    const { w, ana, cut, joao } = setup()
+    // Relógio do teste: segunda 02/03 às 09:00. Avança para 15:00 e lança quem veio às 10:00.
+    w.now = toISO('2026-03-02', '15:00')
+    const today = (t: string) => toISO('2026-03-02', t)
+    expect(() => w.do(createAppointment, { clientId: joao, barberId: ana, serviceIds: [cut], start: today('10:00') })).toThrow(/passado/)
+    const before = w.state.messages.length
+    const appt = w.do(createAppointment, { clientId: joao, barberId: ana, serviceIds: [cut], start: today('10:00'), retro: true })
+    expect(appt).toMatchObject({ status: 'scheduled', start: today('10:00') })
+    expect(w.state.messages.length).toBe(before)
+    // Ontem continua bloqueado, mesmo no modo retroativo.
+    expect(() => w.do(createAppointment, { clientId: joao, barberId: ana, serviceIds: [cut], start: toISO('2026-03-01', '10:00'), retro: true })).toThrow(/passado/)
+    // O link do cliente nunca oferece horário que já passou.
+    expect(availableSlots(w.state, ana, '2026-03-02', 30, w.now).every((x) => x >= w.now)).toBe(true)
+    expect(availableSlots(w.state, ana, '2026-03-02', 30, toISO('2026-03-02', '00:00'))).toContain(today('09:00'))
+  })
+
   it('bloqueia passado, dia fechado, fora do horário e serviço que passa do fechamento', () => {
     const { w, ana, cut, joao } = setup()
     const base = { clientId: joao, barberId: ana, serviceIds: [cut] }

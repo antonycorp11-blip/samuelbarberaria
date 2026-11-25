@@ -140,13 +140,15 @@ export function findFitIns(
 function insertAppointment(
   d: DbState,
   ctx: Ctx,
-  i: { clientId: ID; barberId: ID; serviceIds: ID[]; start: ISO; notes?: string; source: Appointment['source'] },
+  i: { clientId: ID; barberId: ID; serviceIds: ID[]; start: ISO; notes?: string; source: Appointment['source']; retro?: boolean },
 ): Appointment {
   const s = base(d)
   if (i.serviceIds.length === 0) fail('no_service', 'Escolha ao menos um serviço.')
   // Lê do rascunho: no agendamento online o cliente pode ter nascido neste mesmo comando.
   const client = must(d.clients.find((c) => c.id === i.clientId), 'Cliente')
-  if (new Date(i.start) < new Date(ctx.now)) fail('past', 'Não é possível agendar no passado.')
+  // Registro retroativo: só para hoje, para lançar na agenda quem já foi atendido.
+  const past = new Date(i.start) < new Date(ctx.now)
+  if (past && !(i.retro && dateKey(i.start) === dateKey(ctx.now))) fail('past', 'Não é possível agendar no passado.')
   for (const id of i.serviceIds) {
     if (!must(s.services.find((x) => x.id === id), 'Serviço').active) fail('inactive_service', 'Serviço inativo.')
   }
@@ -167,12 +169,13 @@ function insertAppointment(
     createdAt: ctx.now,
   }
   d.appointments.push(appt)
-  enqueue(d, ctx, appointmentMessage(s, 'booking_confirmation', client, appt))
+  // Quem já foi atendido não recebe "horário confirmado".
+  if (!past) enqueue(d, ctx, appointmentMessage(s, 'booking_confirmation', client, appt))
   return appt
 }
 
 export const createAppointment: Command<
-  { clientId: ID; barberId: ID; serviceIds: ID[]; start: ISO; notes?: string; fitIn?: boolean; waitlistId?: ID },
+  { clientId: ID; barberId: ID; serviceIds: ID[]; start: ISO; notes?: string; fitIn?: boolean; waitlistId?: ID; retro?: boolean },
   Appointment
 > = (d, i, ctx) => {
   requireBarberScope(ctx, i.barberId)

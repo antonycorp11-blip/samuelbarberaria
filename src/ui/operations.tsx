@@ -174,13 +174,17 @@ export function BookingSheet({ onClose, initial }: {
   const [start, setStart] = useState<ISO | null>(initial?.start ?? null)
   const [notes, setNotes] = useState('')
   const fitIn = Boolean(initial?.fitIn)
+  // Lançar na agenda quem já foi atendido hoje: mostra os horários que já passaram.
+  const [retro, setRetro] = useState(false)
 
   const duration = serviceIds.length ? durationOf(db, serviceIds) : 0
   const now = nowISO()
+  const today = dateKey(now)
+  const pastToday = retro && date === today
   const slots = useMemo(
-    () => (barberId && duration ? availableSlots(db, barberId, date, duration, now) : []),
+    () => (barberId && duration ? availableSlots(db, barberId, date, duration, pastToday ? toISO(today, '00:00') : now) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [db, barberId, date, duration],
+    [db, barberId, date, duration, pastToday],
   )
   const fits = useMemo(
     () => (fitIn && duration ? findFitIns(db, { durationMin: duration, from: now, limit: 6 }) : []),
@@ -198,9 +202,10 @@ export function BookingSheet({ onClose, initial }: {
     attempt(() => {
       exec(createAppointment, {
         clientId: clientId as ID, barberId: barberId as ID, serviceIds, start: start as ISO, notes, fitIn, waitlistId: initial?.waitlistId,
+        retro: pastToday,
       })
       onClose()
-    }, 'Horário marcado')
+    }, pastToday && start && start < now ? 'Atendimento registrado' : 'Horário marcado')
 
   return (
     <Sheet
@@ -208,7 +213,7 @@ export function BookingSheet({ onClose, initial }: {
       onClose={onClose}
       footer={
         <Button variant="primary" block disabled={!canSave || (!fitIn && !!start && duration > 0 && !slots.includes(start))} onClick={save}>
-          {start ? `Marcar às ${timeOf(start)}` : 'Escolha um horário'}
+          {start ? `${pastToday && start < now ? 'Registrar' : 'Marcar'} às ${timeOf(start)}` : 'Escolha um horário'}
           {serviceIds.length > 0 && ` · ${formatBRL(priceOf(db, serviceIds))}`}
         </Button>
       }
@@ -253,6 +258,14 @@ export function BookingSheet({ onClose, initial }: {
             <span className="mb-1.5 block text-[13px] font-bold text-muted">Dia</span>
             <DatePicker value={date} onChange={(d) => { setDate(d); setStart(null) }} />
           </div>
+          {date === today && (
+            <Toggle
+              checked={retro}
+              onChange={(v) => { setRetro(v); setStart(null) }}
+              label="Já atendido hoje"
+              hint="Mostra os horários que já passaram, para lançar quem foi atendido. O cliente não recebe aviso."
+            />
+          )}
           {duration > 0 && (
             <div>
               <span className="mb-1.5 block text-[13px] font-bold text-muted">Horário ({duration} min)</span>
