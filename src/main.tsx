@@ -3,10 +3,12 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { bootstrap } from '@/data/store'
 import { initPush } from '@/integrations/push'
+import { keepUpdated } from '@/integrations/update'
 import App from './App'
 import './index.css'
 
 void initPush()
+keepUpdated()
 
 const root = createRoot(document.getElementById('root') as HTMLElement)
 

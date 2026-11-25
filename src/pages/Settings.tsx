@@ -144,7 +144,7 @@ export default function SettingsPage() {
         <Card className="flex items-center justify-between gap-3 p-3.5">
           <div className="min-w-0">
             <div className="truncate font-bold">{actor.name}</div>
-            <div className="text-sm text-muted">{owner ? 'Dono' : 'Barbeiro'}</div>
+            <div className="text-sm text-muted">{owner ? 'Dono' : 'Barbeiro'} · versão {__APP_VERSION__}</div>
           </div>
           <div className="flex gap-2">
             <Button className="min-h-10" onClick={() => setPassword(true)}>Senha</Button>
