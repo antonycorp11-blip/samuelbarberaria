@@ -1,8 +1,10 @@
-import { Check, Clock, Copy, Plus, QrCode, Search, Trash2, UserPlus, Zap } from 'lucide-react'
+import { Check, Clock, Copy, Plus, QrCode, ScanLine, Search, Trash2, UserPlus, Zap } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { waTemplates } from '@/domain/whatsapp'
 import { WhatsAppButton } from './whatsapp'
 import { QrSvg } from './qr'
+import { QrScanner } from './scan'
+import { parseServiceQr } from '@/domain/scan'
 import { shopPix } from '@/domain/pix'
 import { Link } from 'react-router-dom'
 import { exec, getCtx, nowISO, useActor, useDb } from '@/data/store'
@@ -413,6 +415,7 @@ export function CheckoutSheet({ appointment, onClose, onBack }: { appointment?: 
   const [useReward, setUseReward] = useState(false)
   const [payments, setPayments] = useState<{ method: PaymentMethod; amountCents: number }[]>([{ method: 'pix', amountCents: 0 }])
   const [received, setReceived] = useState(0)
+  const [scanning, setScanning] = useState(false)
   const [adding, setAdding] = useState(false)
   const [showPix, setShowPix] = useState(false)
 
@@ -517,11 +520,28 @@ export function CheckoutSheet({ appointment, onClose, onBack }: { appointment?: 
             ))}
           </div>
         ) : (
-          <button type="button" onClick={() => setAdding(true)} className="flex min-h-12 w-full items-center gap-2 px-3 text-sm font-bold text-brass">
-            <Plus size={17} /> Adicionar serviço ou produto
-          </button>
+          <div className="flex">
+            <button type="button" onClick={() => setAdding(true)} className="flex min-h-12 flex-1 items-center gap-2 px-3 text-sm font-bold text-brass">
+              <Plus size={17} /> Adicionar
+            </button>
+            <button type="button" onClick={() => setScanning(true)} className="flex min-h-12 items-center gap-1.5 border-l border-line/70 px-3 text-sm font-bold text-brass">
+              <ScanLine size={17} /> Escanear
+            </button>
+          </div>
         )}
       </div>
+      {scanning && (
+        <QrScanner
+          onClose={() => setScanning(false)}
+          onCode={(text) => {
+            const service = parseServiceQr(text, db.services)
+            if (!service) return toast.bad('Esse QR não é de um serviço da barbearia.')
+            addLine('service', service.id)
+            navigator.vibrate?.(60)
+            toast.ok(`${service.name} lançado`)
+          }}
+        />
+      )}
       {quoteError && <p className="rounded-xl bg-bad/15 p-3 text-sm font-semibold text-bad">{quoteError}</p>}
 
       {plan && offDay && hasPlanService && (

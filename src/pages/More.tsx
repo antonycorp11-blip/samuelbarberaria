@@ -14,6 +14,7 @@ const ITEMS = [
   { to: '/estoque', label: 'Estoque', sub: 'Produtos e giro', icon: Boxes, owner: true },
   { to: '/assinaturas', label: 'Clube', sub: 'Assinaturas', icon: Crown, owner: true },
   { to: '/taxas', label: 'Taxas', sub: 'Quanto cai líquido', icon: Calculator, owner: true },
+  { to: '/qr-servicos', label: 'QR dos serviços', sub: 'Folha para a bancada', icon: QrCode, owner: true },
   { to: '/marketing', label: 'Marketing', sub: 'Cupons e campanhas', icon: Megaphone, owner: true },
   { to: '/relatorios', label: 'Relatórios', sub: 'Indicadores', icon: BarChart3, owner: true },
   { to: '/config', label: 'Ajustes', sub: 'Serviços e horários', icon: Settings, owner: false },

@@ -8,6 +8,7 @@ import ClientDetailPage from '@/pages/ClientDetail'
 import ClientsPage from '@/pages/Clients'
 import ClubPage from '@/pages/Club'
 import FeesPage from '@/pages/Fees'
+import ServiceQrPage from '@/pages/ServiceQr'
 import FinancePage from '@/pages/Finance'
 import HomePage from '@/pages/Home'
 import LoginPage from '@/pages/Login'
@@ -46,7 +47,7 @@ function Shell() {
   return (
     <div className="mx-auto min-h-dvh max-w-2xl">
       <main key={location.pathname} className="pb-nav anim-fade"><Outlet /></main>
-      <nav aria-label="Principal" className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-line bg-bg/95 backdrop-blur">
+      <nav aria-label="Principal" className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-line bg-bg/95 backdrop-blur print:hidden">
         <div className="mx-auto flex max-w-2xl items-center px-2 pt-1">
           <Tab to="/" label="Início" icon={Home} end />
           <Tab to="/agenda" label="Agenda" icon={CalendarDays} />
@@ -103,6 +104,7 @@ export default function App() {
           <Route path="estoque" element={<OwnerOnly><StockPage /></OwnerOnly>} />
           <Route path="assinaturas" element={<OwnerOnly><ClubPage /></OwnerOnly>} />
           <Route path="taxas" element={<OwnerOnly><FeesPage /></OwnerOnly>} />
+          <Route path="qr-servicos" element={<OwnerOnly><ServiceQrPage /></OwnerOnly>} />
           <Route path="marketing" element={<OwnerOnly><MarketingPage /></OwnerOnly>} />
           <Route path="relatorios" element={<OwnerOnly><ReportsPage /></OwnerOnly>} />
           <Route path="config" element={<SettingsPage />} />
