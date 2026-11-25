@@ -261,6 +261,10 @@ export interface Plan {
   visitsPerCycle: number | null
   serviceIds: ID[]
   productDiscountBps: Bps
+  /** Desconto do assinante em serviços avulsos: os que não estão no plano e os feitos fora dos dias do plano. */
+  serviceDiscountBps?: Bps
+  /** Dias da semana em que o plano vale (0 = domingo). Vazio ou sem valor = todos os dias. */
+  allowedDays?: number[]
   benefits: string[]
   active: boolean
 }

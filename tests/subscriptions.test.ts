@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { runAutomations } from '../src/domain/automations'
 import { dre } from '../src/domain/finance'
 import { checkout, refundSale } from '../src/domain/sales'
-import { cancelSubscription, payCharge, subscribe, subscriptionMetrics, upsertPlan } from '../src/domain/subscriptions'
+import { cancelSubscription, payCharge, planDaysLabel, subscribe, subscriptionMetrics, upsertPlan } from '../src/domain/subscriptions'
+import { weekday } from '../src/domain/time'
 import { commissionBalance } from '../src/domain/team'
 import { assertInvariants, setup } from './helpers'
 
@@ -44,6 +45,52 @@ describe('clube de assinaturas', () => {
     })
     expect(sale.items[0]?.netCents).toBe(0)
     expect(sale.totalCents).toBe(6933)
+  })
+
+  it('plano de seg a qua: fora do dia bloqueia o plano e cobra avulso com o desconto do assinante', () => {
+    const ctx = setup()
+    const { w, ana, cut, joao } = ctx
+    const today = weekday(w.today)
+    const planId = w.do(upsertPlan, {
+      name: 'Básico seg–qua', priceCents: 6500, visitsPerCycle: null, serviceIds: [cut], productDiscountBps: 1000,
+      serviceDiscountBps: 2000, allowedDays: [(today + 1) % 7], benefits: [],
+    })
+    w.do(subscribe, { clientId: joao, planId, payWith: 'pix' })
+    const items = [{ kind: 'service' as const, refId: cut, qty: 1 }]
+    expect(() => w.do(checkout, { clientId: joao, barberId: ana, items, useSubscription: true, payments: [] })).toThrow(/vale só .*20% de desconto/)
+    const sale = w.do(checkout, { clientId: joao, barberId: ana, items, payments: [{ method: 'pix', amountCents: 4000 }] })
+    expect(sale.items[0]).toMatchObject({ coverage: null, grossCents: 5000, discountCents: 1000, netCents: 4000 })
+    expect(w.state.subscriptions[0]?.usedVisits).toBe(0)
+    // Comissão normal do barbeiro sobre o valor com desconto.
+    expect(w.state.commissions.find((c) => c.saleId === sale.id)).toMatchObject({ baseCents: 4000, amountCents: 2000 })
+    assertInvariants(w.state)
+  })
+
+  it('no dia do plano o corte entra no plano e a barba avulsa ganha o desconto', () => {
+    const ctx = setup()
+    const { w, ana, beard, cut, joao } = ctx
+    const planId = w.do(upsertPlan, {
+      name: 'Básico seg–qua', priceCents: 6500, visitsPerCycle: null, serviceIds: [cut], productDiscountBps: 1000,
+      serviceDiscountBps: 2000, allowedDays: [weekday(w.today)], benefits: [],
+    })
+    w.do(subscribe, { clientId: joao, planId, payWith: 'pix' })
+    const sale = w.do(checkout, {
+      clientId: joao, barberId: ana, useSubscription: true,
+      items: [{ kind: 'service', refId: cut, qty: 1 }, { kind: 'service', refId: beard, qty: 1 }],
+      payments: [{ method: 'pix', amountCents: 2666 }],
+    })
+    expect(sale.items.map((i) => [i.coverage, i.netCents])).toEqual([['subscription', 0], [null, 2666]])
+    expect(w.state.subscriptions[0]?.usedVisits).toBe(1)
+    assertInvariants(w.state)
+  })
+
+  it('dias do plano viram texto e dia inválido é recusado', () => {
+    const plan = (allowedDays: number[]) => ({ id: 'p', name: 'P', priceCents: 1, visitsPerCycle: null, serviceIds: [], productDiscountBps: 0, benefits: [], active: true, allowedDays })
+    expect(planDaysLabel(plan([1, 2, 3]))).toBe('seg a qua')
+    expect(planDaysLabel(plan([5, 1, 3]))).toBe('seg, qua e sex')
+    expect(planDaysLabel(plan([]))).toBeNull()
+    const { w, cut } = setup()
+    expect(() => w.do(upsertPlan, { name: 'X', priceCents: 100, visitsPerCycle: null, serviceIds: [cut], productDiscountBps: 0, allowedDays: [7], benefits: [] })).toThrow(/Dias/)
   })
 
   it('não aceita segunda assinatura ativa', () => {

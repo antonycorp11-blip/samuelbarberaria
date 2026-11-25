@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { api } from '@/data/store'
 import { formatBps, formatBRL } from '@/domain/money'
+import { planDaysLabel } from '@/domain/subscriptions'
 import { emptyState, type DbState, type ID } from '@/domain/types'
 import { Button, Card, cx, Field, Input, toast } from '@/ui/kit'
 
@@ -196,6 +197,10 @@ export default function PublicClubPage() {
               </div>
               <ul className="mt-2 space-y-1 text-sm opacity-85">
                 <li>{p.visitsPerCycle === null ? 'Visitas ilimitadas' : `${p.visitsPerCycle} visitas por mês`}: {serviceNames(p.serviceIds)}</li>
+                {planDaysLabel(p) && <li>Vale de {planDaysLabel(p)}</li>}
+                {(p.serviceDiscountBps ?? 0) > 0 && (
+                  <li>{formatBps(p.serviceDiscountBps ?? 0)} de desconto em serviços avulsos{planDaysLabel(p) ? ', inclusive fora desses dias' : ''}</li>
+                )}
                 {p.productDiscountBps > 0 && <li>{formatBps(p.productDiscountBps)} de desconto em produtos</li>}
                 {p.benefits.map((b) => <li key={b}>{b}</li>)}
               </ul>

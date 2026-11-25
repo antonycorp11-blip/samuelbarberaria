@@ -5,8 +5,8 @@ import { useState } from 'react'
 import { exec, useDb } from '@/data/store'
 import { METHOD_LABEL } from '@/domain/finance'
 import { formatBps, formatBRL } from '@/domain/money'
-import { cancelSubscription, payCharge, subscribe, subscriptionMetrics, upsertPlan } from '@/domain/subscriptions'
-import { brDate } from '@/domain/time'
+import { cancelSubscription, payCharge, planDaysLabel, subscribe, subscriptionMetrics, upsertPlan } from '@/domain/subscriptions'
+import { brDate, weekdayNames } from '@/domain/time'
 import type { ID, PaymentMethod, Plan, Subscription } from '@/domain/types'
 import {
   attempt, Avatar, Badge, Button, Card, Chips, ConfirmSheet, Empty, Field, IconButton, Input, List, MoneyInput, PageHeader, PercentInput, Row, Section, Segmented, Sheet, Stat, Textarea, Toggle,
@@ -23,12 +23,15 @@ function PlanForm({ plan, onClose }: { plan?: Plan; onClose: () => void }) {
   const [visits, setVisits] = useState(String(plan?.visitsPerCycle ?? 4))
   const [serviceIds, setServiceIds] = useState<ID[]>(plan?.serviceIds ?? [])
   const [discount, setDiscount] = useState(plan?.productDiscountBps ?? 1000)
+  const [serviceDiscount, setServiceDiscount] = useState(plan?.serviceDiscountBps ?? 0)
+  const [days, setDays] = useState<number[]>(plan?.allowedDays ?? [])
   const [benefits, setBenefits] = useState(plan?.benefits.join('\n') ?? '')
   const [active, setActive] = useState(plan?.active ?? true)
   const save = () => {
     const ok = attempt(
       () => exec(upsertPlan, {
         id: plan?.id, name, priceCents: price, visitsPerCycle: unlimited ? null : Number(visits), serviceIds, productDiscountBps: discount,
+        serviceDiscountBps: serviceDiscount, allowedDays: days.length === 7 ? [] : [...days].sort((a, b) => a - b),
         benefits: benefits.split('\n').map((b) => b.trim()).filter(Boolean), active,
       }),
       'Plano salvo',
@@ -50,6 +53,21 @@ function PlanForm({ plan, onClose }: { plan?: Plan; onClose: () => void }) {
       </div>
       <Toggle checked={unlimited} onChange={setUnlimited} label="Visitas ilimitadas" />
       {!unlimited && <Field label="Visitas por mês"><Input inputMode="numeric" value={visits} onChange={(e) => setVisits(e.target.value)} /></Field>}
+      <div>
+        <span className="mb-1.5 block text-[13px] font-bold text-muted">Dias em que o plano vale</span>
+        <Chips
+          multi
+          value={days.map(String)}
+          onChange={(d) => setDays((l) => (l.includes(Number(d)) ? l.filter((x) => x !== Number(d)) : [...l, Number(d)]))}
+          options={[1, 2, 3, 4, 5, 6, 0].map((d) => ({ value: String(d), label: weekdayNames[d] as string }))}
+        />
+        <span className="mt-1 block text-[13px] text-muted">
+          {days.length === 0 || days.length === 7 ? 'Nenhum marcado: vale todos os dias.' : 'Fora desses dias, o serviço sai avulso, com o desconto abaixo.'}
+        </span>
+      </div>
+      <Field label="Desconto em serviços avulsos (%)" hint="Serviços fora do plano e os feitos fora dos dias do plano.">
+        <PercentInput value={serviceDiscount} onChange={setServiceDiscount} />
+      </Field>
       <Field label="Desconto em produtos (%)"><PercentInput value={discount} onChange={setDiscount} /></Field>
       <Field label="Benefícios" hint="Um por linha."><Textarea value={benefits} onChange={(e) => setBenefits(e.target.value)} /></Field>
       {plan && <Toggle checked={active} onChange={setActive} label="Disponível para novas assinaturas" />}
@@ -250,7 +268,12 @@ export default function ClubPage() {
                       <span className="tnum font-extrabold text-brass">{formatBRL(p.priceCents)}</span>
                     </div>
                     <div className="mt-1 text-[13px] text-muted">
-                      {p.visitsPerCycle === null ? 'Ilimitado' : `${p.visitsPerCycle} visitas/mês`} · {formatBps(p.productDiscountBps)} em produtos
+                      {[
+                        planDaysLabel(p) ?? 'todos os dias',
+                        p.visitsPerCycle === null ? 'ilimitado' : `${p.visitsPerCycle} visitas/mês`,
+                        p.serviceDiscountBps ? `${formatBps(p.serviceDiscountBps)} em avulsos` : null,
+                        `${formatBps(p.productDiscountBps)} em produtos`,
+                      ].filter(Boolean).join(' · ')}
                     </div>
                     {p.benefits.length > 0 && <div className="mt-1 text-[13px] text-muted">{p.benefits.join(' · ')}</div>}
                   </Card>

@@ -2,6 +2,7 @@ import { audit, base, must, requireBarberScope, requireOwner, type Command, type
 import { fail } from './errors'
 import { allocate, applyBps } from './money'
 import { dateKey } from './time'
+import { planDaysLabel, planValidOn } from './subscriptions'
 import type { Client, Coupon, DbState, ID, PaymentMethod, Product, Sale, SaleItem, SalePayment, Subscription } from './types'
 
 export interface CheckoutItem {
@@ -82,6 +83,10 @@ export function quote(s: DbState, i: Omit<CheckoutInput, 'payments'>, ctx: Pick<
   let usedSub: Subscription | null = null
   if (i.useSubscription) {
     if (!sub || !plan) fail('no_subscription', 'Cliente sem assinatura ativa.')
+    if (!planValidOn(plan, today)) {
+      const off = plan.serviceDiscountBps ? ` Hoje o serviço sai avulso, com ${plan.serviceDiscountBps / 100}% de desconto.` : ' Hoje o serviço sai avulso.'
+      fail('off_day', `O ${plan.name.trim()} vale só ${planDaysLabel(plan)}.${off}`)
+    }
     if (plan.visitsPerCycle !== null && sub.usedVisits >= plan.visitsPerCycle) {
       fail('no_visits', 'As visitas do plano neste ciclo acabaram.')
     }
@@ -96,8 +101,10 @@ export function quote(s: DbState, i: Omit<CheckoutInput, 'payments'>, ctx: Pick<
   }
   if (plan) {
     for (const it of items) {
-      if (it.kind !== 'product') continue
-      it.discountCents = applyBps(it.grossCents, plan.productDiscountBps)
+      if (it.coverage !== null) continue
+      // Assinante paga menos no que o plano não cobre: produtos e serviços avulsos (inclusive fora do dia do plano).
+      const bps = it.kind === 'product' ? plan.productDiscountBps : (plan.serviceDiscountBps ?? 0)
+      it.discountCents = applyBps(it.grossCents, bps)
       it.netCents = it.grossCents - it.discountCents
     }
   }

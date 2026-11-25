@@ -15,6 +15,7 @@ import { DomainError } from '@/domain/errors'
 import { METHOD_LABEL } from '@/domain/finance'
 import { formatBRL } from '@/domain/money'
 import { activeSubscription, checkout, quote, type CheckoutItem } from '@/domain/sales'
+import { planDaysLabel, planValidOn } from '@/domain/subscriptions'
 import { addDays, brDate, dateKey, dayLabel, timeOf, toISO, weekdayLabel } from '@/domain/time'
 import type { Appointment, AppointmentStatus, DateKey, ID, ISO, PaymentMethod } from '@/domain/types'
 import {
@@ -404,7 +405,10 @@ export function CheckoutSheet({ appointment, onClose, onBack }: { appointment?: 
   const sub = activeSubscription(db, clientId)
   const plan = sub && db.plans.find((p) => p.id === sub.planId)
   const visitsLeft = plan && sub ? (plan.visitsPerCycle === null ? Infinity : plan.visitsPerCycle - sub.usedVisits) : 0
-  const coverable = Boolean(plan && visitsLeft > 0 && items.some((i) => i.kind === 'service' && plan.serviceIds.includes(i.refId)))
+  const hasPlanService = Boolean(plan && items.some((i) => i.kind === 'service' && plan.serviceIds.includes(i.refId)))
+  // Fora dos dias do plano o serviço não entra no plano: sai avulso, com o desconto de assinante.
+  const offDay = Boolean(plan && !planValidOn(plan, dateKey(nowISO())))
+  const coverable = Boolean(plan && visitsLeft > 0 && hasPlanService && !offDay)
   const [useSub, setUseSub] = useState(true)
   const [useReward, setUseReward] = useState(false)
   const [payments, setPayments] = useState<{ method: PaymentMethod; amountCents: number }[]>([{ method: 'pix', amountCents: 0 }])
@@ -492,7 +496,9 @@ export function CheckoutSheet({ appointment, onClose, onBack }: { appointment?: 
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[15px] font-semibold">{ref?.name}</div>
                 <div className="tnum text-[13px] text-muted">
-                  {line?.coverage === 'subscription' ? 'Coberto pelo plano' : line?.coverage === 'reward' ? 'Recompensa' : formatBRL(line?.netCents ?? 0)}
+                  {line?.coverage === 'subscription' ? 'Coberto pelo plano' : line?.coverage === 'reward' ? 'Recompensa' : line && line.discountCents > 0 ? (
+                    <><s className="opacity-60">{formatBRL(line.grossCents)}</s> {formatBRL(line.netCents)}</>
+                  ) : formatBRL(line?.netCents ?? 0)}
                 </div>
               </div>
               <IconButton label="Diminuir" className="size-9 bg-surface" onClick={() => setLine(i, it.qty - 1)}>
@@ -518,6 +524,12 @@ export function CheckoutSheet({ appointment, onClose, onBack }: { appointment?: 
       </div>
       {quoteError && <p className="rounded-xl bg-bad/15 p-3 text-sm font-semibold text-bad">{quoteError}</p>}
 
+      {plan && offDay && hasPlanService && (
+        <p className="rounded-xl bg-warn/15 p-3 text-sm font-semibold text-warn">
+          O {plan.name.trim()} vale só {planDaysLabel(plan)}. Hoje o serviço sai avulso
+          {plan.serviceDiscountBps ? `, com ${plan.serviceDiscountBps / 100}% de desconto de assinante` : ''}.
+        </p>
+      )}
       {plan && coverable && (
         <Toggle
           checked={useSub}

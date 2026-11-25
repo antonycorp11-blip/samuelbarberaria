@@ -3,7 +3,7 @@ import { audit, base, must, requireOwner, type Command, type Ctx } from './engin
 import { fail } from './errors'
 import { chargeMessage, enqueue } from './messages'
 import { allocate, applyBps } from './money'
-import { addDays, addMonths, dateKey } from './time'
+import { addDays, addMonths, dateKey, weekday, weekdayNames } from './time'
 import type { Cents, DateKey, DbState, ID, PaymentMethod, Plan, Subscription, SubscriptionCharge } from './types'
 
 export const upsertPlan: Command<Omit<Plan, 'id' | 'active'> & { id?: ID; active?: boolean }, ID> = (d, i, ctx) => {
@@ -12,6 +12,10 @@ export const upsertPlan: Command<Omit<Plan, 'id' | 'active'> & { id?: ID; active
   if (i.priceCents <= 0) fail('bad_price', 'Informe o valor do plano.')
   if (i.serviceIds.length === 0) fail('no_service', 'Escolha ao menos um serviço do plano.')
   if (i.visitsPerCycle !== null && i.visitsPerCycle <= 0) fail('bad_visits', 'Número de visitas inválido.')
+  const days = i.allowedDays ?? []
+  if (days.some((x) => !Number.isInteger(x) || x < 0 || x > 6) || new Set(days).size !== days.length) fail('bad_days', 'Dias do plano inválidos.')
+  const discount = i.serviceDiscountBps ?? 0
+  if (!Number.isInteger(discount) || discount < 0 || discount > 10000) fail('bad_discount', 'Desconto em serviços inválido.')
   const current = i.id ? must(d.plans.find((p) => p.id === i.id), 'Plano') : null
   if (current) {
     Object.assign(current, { ...i, active: i.active ?? current.active })
@@ -20,6 +24,21 @@ export const upsertPlan: Command<Omit<Plan, 'id' | 'active'> & { id?: ID; active
   const id = ctx.id()
   d.plans.push({ ...i, id, active: true })
   return id
+}
+
+/** O plano vale nesse dia? Sem dias marcados, vale a semana toda. */
+export function planValidOn(plan: Plan, date: DateKey): boolean {
+  return !plan.allowedDays?.length || plan.allowedDays.includes(weekday(date))
+}
+
+/** "seg a qua", "seg, qua e sex" ou null quando vale todo dia. */
+export function planDaysLabel(plan: Plan): string | null {
+  const days = [...(plan.allowedDays ?? [])].sort((a, b) => a - b)
+  if (days.length === 0 || days.length === 7) return null
+  const names = days.map((x) => weekdayNames[x])
+  const continuous = days.every((x, i) => i === 0 || x === (days[i - 1] as number) + 1)
+  if (continuous && days.length >= 3) return `${names[0]} a ${names[names.length - 1]}`
+  return names.length === 1 ? (names[0] as string) : `${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`
 }
 
 export function createCharge(
