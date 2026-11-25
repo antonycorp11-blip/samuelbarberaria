@@ -35,10 +35,18 @@ export default defineConfig({
         // A versão nova assume assim que é baixada, sem esperar todos os apps abertos fecharem.
         skipWaiting: true,
         clientsClaim: true,
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//, /^\/push\//],
-        globPatterns: ['**/*.{js,css,html,webp,woff2}', 'icon-192.png', 'apple-touch-icon.png'],
-        globIgnores: ['push/**'],
+        // A página (index.html) nunca sai do cache guardado: é sempre buscada na internet primeiro,
+        // para cliente e barbeiro abrirem sempre a versão publicada. O guardado só vale sem internet.
+        navigateFallback: null,
+        globPatterns: ['**/*.{js,css,webp,woff2}', 'icon-192.png', 'apple-touch-icon.png'],
+        globIgnores: ['push/**', 'index.html'],
+        runtimeCaching: [
+          {
+            urlPattern: ({ request, url }) => request.mode === 'navigate' && !url.pathname.startsWith('/api/') && !url.pathname.startsWith('/push/'),
+            handler: 'NetworkFirst',
+            options: { cacheName: 'paginas', networkTimeoutSeconds: 4, expiration: { maxEntries: 20 } },
+          },
+        ],
       },
     }),
   ],
