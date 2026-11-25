@@ -5,6 +5,7 @@ import { WhatsAppButton } from './whatsapp'
 import { QrSvg } from './qr'
 import { QrScanner } from './scan'
 import { parseServiceQr } from '@/domain/scan'
+import { productByBarcode } from '@/domain/stock'
 import { shopPix } from '@/domain/pix'
 import { Link } from 'react-router-dom'
 import { exec, getCtx, nowISO, useActor, useDb } from '@/data/store'
@@ -549,10 +550,12 @@ export function CheckoutSheet({ appointment, onClose, onBack }: { appointment?: 
           onClose={() => setScanning(false)}
           onCode={(text) => {
             const service = parseServiceQr(text, db.services)
-            if (!service) return toast.bad('Esse QR não é de um serviço da barbearia.')
-            addLine('service', service.id)
+            const product = productByBarcode(text, db.products)
+            if (service) addLine('service', service.id)
+            else if (product) addLine('product', product.id)
+            else return toast.bad('Esse código não é de um serviço ou produto da barbearia.')
             navigator.vibrate?.(60)
-            toast.ok(`${service.name} lançado`)
+            toast.ok(`${(service ?? product)!.name} lançado`)
           }}
         />
       )}

@@ -6,6 +6,7 @@ import { COMMANDS } from '../src/domain/commands'
 import { upsertBarber } from '../src/domain/team'
 import { SYSTEM_ACTOR, type Ctx } from '../src/domain/engine'
 import { DomainError } from '../src/domain/errors'
+import { validGtin } from '../src/domain/stock'
 import { CANCEL_MARKER } from '../src/domain/messages'
 import { claimMessages, settleMessage } from '../src/domain/outbox'
 import {
@@ -41,6 +42,7 @@ export interface Env extends AsaasEnv {
   MAIL_FROM?: string
   ONESIGNAL_APP_ID?: string
   ONESIGNAL_REST_API_KEY?: string
+  COSMOS_TOKEN?: string
   APP_URL?: string
   // Só para testes locais.
   SMTP_HOST?: string
@@ -504,6 +506,23 @@ async function login(email: string, password: string, { db, env }: Deps) {
 
 async function privateRoutes(path: string, req: Request, actor: Actor, deps: Deps): Promise<Response> {
   const { env, store, db, sendEmail, http = fetch } = deps
+
+  if (path === '/api/products/lookup' && req.method === 'GET') {
+    const gtin = new URL(req.url).searchParams.get('gtin') ?? ''
+    if (!validGtin(gtin)) return fail('Código de barras inválido.', 400)
+    if (!env.COSMOS_TOKEN) return json({ found: false, reason: 'not_configured' })
+    try {
+      const res = await http(`https://api.cosmos.bluesoft.com.br/gtins/${gtin}.json`, {
+        headers: { 'X-Cosmos-Token': env.COSMOS_TOKEN, 'User-Agent': 'SamuelBarberShop/1.0', 'Content-Type': 'application/json' },
+      })
+      if (res.status === 404) return json({ found: false })
+      if (!res.ok) return json({ found: false, reason: 'unavailable' })
+      const data = await res.json() as { description?: unknown; brand?: { name?: unknown } | null; thumbnail?: unknown }
+      return json({ found: true, name: typeof data.description === 'string' ? data.description : '', brand: typeof data.brand?.name === 'string' ? data.brand.name : '', imageUrl: typeof data.thumbnail === 'string' ? data.thumbnail : null })
+    } catch {
+      return json({ found: false, reason: 'unavailable' })
+    }
+  }
 
   if (path === '/api/sync' && req.method === 'GET') {
     const since = Number(new URL(req.url).searchParams.get('since') ?? 0)

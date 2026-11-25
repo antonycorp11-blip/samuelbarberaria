@@ -1,5 +1,15 @@
 # E-mail e push
 
+## Produtos pelo código de barras
+
+Para buscar nome e marca na base Bluesoft Cosmos, grave o token no servidor:
+
+```bash
+npx wrangler secret put COSMOS_TOKEN
+```
+
+Sem o token, o cadastro continua manual.
+
 O envio sai do servidor na Cloudflare (`worker/`): a cada minuto e logo depois de cada ação. As chaves ficam nele, nunca no app.
 
 ## 1. Gmail

@@ -3,29 +3,50 @@ import { fail } from './errors'
 import { addDays, dateKey } from './time'
 import type { Cents, DateKey, DbState, ID, PaymentMethod, Product } from './types'
 
+export function validGtin(value: string): boolean {
+  if (!/^\d{8,14}$/.test(value)) return false
+  const digits = [...value].map(Number)
+  const sum = digits.slice(0, -1).reverse().reduce((total, digit, index) => total + digit * (index % 2 === 0 ? 3 : 1), 0)
+  return (10 - sum % 10) % 10 === digits[digits.length - 1]
+}
+
+function sameBarcode(a: string, b: string): boolean {
+  return a === b || (a.length === 12 && b === `0${a}`) || (b.length === 12 && a === `0${b}`)
+}
+
+export function productByBarcode(code: string, products: Product[], activeOnly = true): Product | null {
+  return products.find((p) => (!activeOnly || p.active) && p.barcode && sameBarcode(p.barcode, code)) ?? null
+}
+
 export function weightedAverage(qty: number, avg: Cents, addQty: number, addCost: Cents): Cents {
   const total = qty + addQty
   return total > 0 ? Math.round((qty * avg + addQty * addCost) / total) : addCost
 }
 
 export const upsertProduct: Command<
-  { id?: ID; name: string; salePriceCents: Cents; minQty: number; active?: boolean },
+  { id?: ID; name: string; salePriceCents: Cents; minQty: number; active?: boolean; barcode?: string | null },
   ID
 > = (d, i, ctx) => {
   requireOwner(ctx)
   if (!i.name.trim()) fail('bad_name', 'Informe o nome do produto.')
   if (i.salePriceCents < 0 || i.minQty < 0) fail('bad_value', 'Valores não podem ser negativos.')
   const current = i.id ? must(d.products.find((p) => p.id === i.id), 'Produto') : null
+  const barcode = i.barcode === undefined ? current?.barcode ?? null : i.barcode?.replace(/\D/g, '') || null
+  if (barcode && !validGtin(barcode)) fail('bad_barcode', 'Código de barras inválido.')
+  if (barcode && d.products.some((p) => p.id !== i.id && p.active && p.barcode && sameBarcode(p.barcode, barcode))) {
+    fail('duplicate_barcode', 'Esse código de barras já é de outro produto.')
+  }
   if (current) {
     current.name = i.name.trim()
     current.salePriceCents = i.salePriceCents
     current.minQty = i.minQty
+    current.barcode = barcode
     current.active = i.active ?? current.active
     return current.id
   }
   const id = ctx.id()
   d.products.push({
-    id, name: i.name.trim(), salePriceCents: i.salePriceCents, minQty: i.minQty, avgCostCents: 0, qty: 0, active: true,
+    id, name: i.name.trim(), barcode, salePriceCents: i.salePriceCents, minQty: i.minQty, avgCostCents: 0, qty: 0, active: true,
   })
   return id
 }

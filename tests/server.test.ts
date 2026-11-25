@@ -183,6 +183,52 @@ function server() {
   return { db, deps, mails, pushes, gateway, call, install, state, webhook }
 }
 
+describe('busca de produto no Cosmos', () => {
+  it('encontra o produto com token e cabeçalhos certos', async () => {
+    const s = server()
+    const owner = await s.install()
+    s.deps.env = { ...s.deps.env, COSMOS_TOKEN: 'token-teste' }
+    let called = false
+    s.deps.http = (async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toBe('https://api.cosmos.bluesoft.com.br/gtins/7891234567895.json')
+      expect(init?.headers).toMatchObject({ 'X-Cosmos-Token': 'token-teste', 'User-Agent': 'SamuelBarberShop/1.0', 'Content-Type': 'application/json' })
+      called = true
+      return Response.json({ description: 'Pomada modeladora', brand: { name: 'Marca' }, thumbnail: 'https://img.test/pomada.jpg' })
+    }) as typeof fetch
+    const r = await s.call('/api/products/lookup?gtin=7891234567895', { token: owner })
+    expect(called).toBe(true)
+    expect(r.data).toEqual({ found: true, name: 'Pomada modeladora', brand: 'Marca', imageUrl: 'https://img.test/pomada.jpg' })
+  })
+
+  it('trata 404, limite, falta de token e GTIN inválido', async () => {
+    const s = server()
+    const owner = await s.install()
+    const path = '/api/products/lookup?gtin=7891234567895'
+    expect((await s.call(path, { token: owner })).data).toEqual({ found: false, reason: 'not_configured' })
+    expect((await s.call('/api/products/lookup?gtin=7891234567896', { token: owner })).status).toBe(400)
+    s.deps.env = { ...s.deps.env, COSMOS_TOKEN: 'token-teste' }
+    s.deps.http = (async () => Response.json({}, { status: 404 })) as typeof fetch
+    expect((await s.call(path, { token: owner })).data).toEqual({ found: false })
+    s.deps.http = (async () => Response.json({}, { status: 429 })) as typeof fetch
+    expect((await s.call(path, { token: owner })).data).toEqual({ found: false, reason: 'unavailable' })
+    s.deps.http = (async () => Response.json({}, { status: 503 })) as typeof fetch
+    expect((await s.call(path, { token: owner })).data).toEqual({ found: false, reason: 'unavailable' })
+    s.deps.http = (async () => { throw new Error('fora do ar') }) as typeof fetch
+    expect((await s.call(path, { token: owner })).data).toEqual({ found: false, reason: 'unavailable' })
+  })
+
+  it('permite barbeiro e recusa acesso sem sessão', async () => {
+    const s = server()
+    const owner = await s.install()
+    const path = '/api/products/lookup?gtin=7891234567895'
+    expect((await s.call(path)).status).toBe(401)
+    const st = await s.state(owner)
+    await s.call('/api/staff', { token: owner, body: { email: 'rafa@teste.com', password: 'senha-rafa1', barberId: st.barbers[0]!.id, name: 'Rafa' } })
+    const login = await s.call('/api/auth/login', { body: { email: 'rafa@teste.com', password: 'senha-rafa1' } })
+    expect((await s.call(path, { token: login.data.token })).status).toBe(200)
+  })
+})
+
 function nextOpenSlot(s: DbState) {
   const barber = s.barbers[0]!
   const now = new Date().toISOString()

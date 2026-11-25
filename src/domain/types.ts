@@ -136,6 +136,7 @@ export interface WaitlistEntry {
 export interface Product {
   id: ID
   name: string
+  barcode?: string | null
   salePriceCents: Cents
   avgCostCents: Cents
   qty: number

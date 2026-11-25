@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import type { BarcodeFormat, DecodeHintType } from '@zxing/library'
 import { Button } from './kit'
 
-/**
- * Câmera dentro do app lendo QR sem parar. Um QR parado na frente da câmera conta uma vez só:
- * para lançar o mesmo serviço de novo, ele precisa sair da frente da câmera e voltar.
- */
+/** Um código parado conta uma vez. Para repetir, tire da frente da câmera. */
 export function QrScanner({ onCode, onClose }: { onCode: (text: string) => void; onClose: () => void }) {
   const video = useRef<HTMLVideoElement>(null)
   const [error, setError] = useState('')
@@ -12,48 +10,38 @@ export function QrScanner({ onCode, onClose }: { onCode: (text: string) => void;
   handler.current = onCode
 
   useEffect(() => {
-    let stream: MediaStream | null = null
-    let timer = 0
     let stopped = false
-    // QR que está na frente da câmera agora; some depois de um instante sem ser visto.
+    let controls: { stop: () => void } | null = null
     const seen = { text: '', at: 0 }
-    const canvas = document.createElement('canvas')
-    const g = canvas.getContext('2d', { willReadFrequently: true })
-
     const start = async () => {
       try {
-        const [{ default: jsQR }, media] = await Promise.all([
-          import('jsqr'),
-          navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }),
+        const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([
+          import('@zxing/browser'), import('@zxing/library'),
         ])
-        stream = media
-        if (stopped || !video.current) return media.getTracks().forEach((t) => t.stop())
-        video.current.srcObject = media
-        await video.current.play()
-        const tick = () => {
+        if (stopped || !video.current) return
+        const hints = new Map<DecodeHintType, BarcodeFormat[]>([[DecodeHintType.POSSIBLE_FORMATS, [
+          BarcodeFormat.QR_CODE, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8,
+          BarcodeFormat.UPC_A, BarcodeFormat.CODE_128,
+        ]]])
+        const reader = new BrowserMultiFormatReader(hints)
+        // Câmera traseira: a padrão de muitos celulares é a frontal, que não serve para ler embalagem.
+        const camera = { video: { facingMode: 'environment' }, audio: false }
+        const active = await reader.decodeFromConstraints(camera, video.current, (result: { getText(): string } | undefined) => {
           if (stopped) return
-          const v = video.current
-          if (v && g && v.videoWidth > 0) {
-            // Imagem reduzida: lê rápido mesmo em celular simples.
-            const scale = Math.min(1, 640 / v.videoWidth)
-            canvas.width = Math.round(v.videoWidth * scale)
-            canvas.height = Math.round(v.videoHeight * scale)
-            g.drawImage(v, 0, 0, canvas.width, canvas.height)
-            const img = g.getImageData(0, 0, canvas.width, canvas.height)
-            const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' })
-            const now = Date.now()
-            if (code?.data) {
-              if (code.data !== seen.text) handler.current(code.data)
-              seen.text = code.data
-              seen.at = now
-            } else if (seen.text && now - seen.at > 700) {
-              seen.text = ''
-            }
+          const now = Date.now()
+          if (result) {
+            const code = result.getText()
+            if (code !== seen.text) handler.current(code)
+            seen.text = code
+            seen.at = now
+          } else if (seen.text && now - seen.at > 700) {
+            seen.text = ''
           }
-          timer = window.setTimeout(tick, 150)
-        }
-        tick()
+        })
+        controls = active
+        if (stopped) active.stop()
       } catch (e) {
+        if (stopped) return
         const denied = e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'SecurityError')
         setError(denied ? 'Libere o acesso à câmera para este site nas configurações do celular.' : 'Não foi possível abrir a câmera deste aparelho.')
       }
@@ -61,8 +49,7 @@ export function QrScanner({ onCode, onClose }: { onCode: (text: string) => void;
     void start()
     return () => {
       stopped = true
-      window.clearTimeout(timer)
-      stream?.getTracks().forEach((t) => t.stop())
+      controls?.stop()
     }
   }, [])
 
@@ -76,7 +63,7 @@ export function QrScanner({ onCode, onClose }: { onCode: (text: string) => void;
           <div className="pointer-events-none absolute inset-[18%] rounded-2xl border-2 border-brass/80" />
         </div>
       )}
-      <p className="text-center text-[13px] text-muted">Aponte para o QR de cada serviço feito. Para lançar o mesmo serviço de novo, afaste e aponte outra vez.</p>
+      <p className="text-center text-[13px] text-muted">Aponte para um QR ou código de barras. Para ler o mesmo código de novo, afaste e aponte outra vez.</p>
       <Button block onClick={onClose}>Terminar leitura</Button>
     </div>
   )

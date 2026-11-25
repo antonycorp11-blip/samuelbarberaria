@@ -286,7 +286,8 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 const inputCls =
   'min-h-12 w-full rounded-xl border border-line bg-raised px-3.5 text-ink outline-none placeholder:text-muted/60 focus:border-brass'
 
-export function Input(p: InputHTMLAttributes<HTMLInputElement>) {
+/** No React 19 o ref chega como prop comum e vai direto para o campo. */
+export function Input(p: InputHTMLAttributes<HTMLInputElement> & { ref?: React.Ref<HTMLInputElement> }) {
   return <input {...p} className={cx(inputCls, p.className)} />
 }
 
