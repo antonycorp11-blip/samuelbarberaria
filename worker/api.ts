@@ -257,13 +257,18 @@ async function publicRoutes(path: string, req: Request, deps: Deps): Promise<Res
     const serviceIds = b?.serviceIds
     if (
       !b || typeof b.name !== 'string' || typeof b.phone !== 'string' || typeof b.email !== 'string' || typeof b.barberId !== 'string' ||
-      typeof b.start !== 'string' || !ISO_INSTANT.test(b.start) || !Array.isArray(serviceIds) || serviceIds.some((x) => typeof x !== 'string') ||
+      typeof b.start !== 'string' || !ISO_INSTANT.test(b.start) || (b.birthDate !== undefined && typeof b.birthDate !== 'string') ||
+      !Array.isArray(serviceIds) || serviceIds.some((x) => typeof x !== 'string') ||
       b.name.length > 100 || b.phone.length > 30 || b.email.length > 200
     ) {
       return fail('Dados inválidos.', 400)
     }
+    // Página antiga guardada no celular, ainda sem o campo: explica em vez de "dados inválidos".
+    if (typeof b.birthDate !== 'string' || !b.birthDate || b.birthDate.length > 10) {
+      return fail('Atualize a página e informe sua data de nascimento.', 400)
+    }
     const appt = await store.execute(bookOnline, {
-      name: b.name, phone: b.phone, email: b.email, serviceIds: serviceIds as string[], barberId: b.barberId, start: b.start,
+      name: b.name, phone: b.phone, email: b.email, birthDate: b.birthDate, serviceIds: serviceIds as string[], barberId: b.barberId, start: b.start,
       marketingOptIn: b.marketingOptIn === true, coupon: typeof b.coupon === 'string' ? b.coupon.slice(0, 20) : null,
     }, ctxFactory(PUBLIC_ACTOR))
     deps.later(deliver(deps))

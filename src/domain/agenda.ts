@@ -1,3 +1,4 @@
+import { validBirthDate } from './clients'
 import { audit, base, must, requireBarberScope, requireOwner, type Command, type Ctx } from './engine'
 import { fail } from './errors'
 import { appointmentMessage, enqueue, welcomeMessage } from './messages'
@@ -317,7 +318,7 @@ function dayLoad(s: DbState, barberId: ID, date: DateKey) {
 }
 
 export const bookOnline: Command<
-  { name: string; phone: string; email: string; serviceIds: ID[]; barberId: ID; start: ISO; marketingOptIn: boolean; coupon?: string | null },
+  { name: string; phone: string; email: string; birthDate: string; serviceIds: ID[]; barberId: ID; start: ISO; marketingOptIn: boolean; coupon?: string | null },
   Appointment
 > = (d, i, ctx) => {
   const s = base(d)
@@ -326,6 +327,7 @@ export const bookOnline: Command<
   if (i.name.trim().length < 2) fail('bad_name', 'Informe seu nome.')
   if (phone.length < 10 || phone.length > 11) fail('bad_phone', 'Informe um celular com DDD.')
   if (!isValidEmail(email)) fail('bad_email', 'Informe um e-mail válido.')
+  if (!validBirthDate(i.birthDate, dateKey(ctx.now))) fail('bad_birthday', 'Informe sua data de nascimento.')
   const earliest = addMinutes(ctx.now, s.settings.minAdvanceMinutes)
   if (new Date(i.start) < new Date(earliest)) fail('too_soon', 'Esse horário já não está disponível.')
   if (dateKey(i.start) > addDays(dateKey(ctx.now), s.settings.bookingWindowDays)) {
@@ -334,13 +336,18 @@ export const bookOnline: Command<
   let client = d.clients.find((c) => c.phone === phone)
   if (client) {
     if (!client.email) client.email = email
+    if (!client.birthDate) {
+      client.birthDate = i.birthDate
+      client.birthday = i.birthDate.slice(5)
+    } else client.birthday = client.birthDate.slice(5)
   } else {
     client = {
       id: ctx.id(),
       name: i.name.trim(),
       phone,
       email,
-      birthday: null,
+      birthDate: i.birthDate,
+      birthday: i.birthDate.slice(5),
       notes: '',
       marketingOptIn: i.marketingOptIn,
       stamps: 0,

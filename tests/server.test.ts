@@ -238,7 +238,7 @@ describe('servidor como autoridade', () => {
     const slot = nextOpenSlot(pub)
     const service = pub.services[0]!
     const r = await s.call('/api/public/book', {
-      body: { name: 'Gilmar Teste', phone: '11977776666', email: 'gilmar@teste.com', serviceIds: [service.id], barberId: slot.barberId, start: slot.start },
+      body: { name: 'Gilmar Teste', phone: '11977776666', email: 'gilmar@teste.com', birthDate: '1990-03-15', serviceIds: [service.id], barberId: slot.barberId, start: slot.start },
     })
     expect(r.status).toBe(200)
     const owner = await s.state(token)
@@ -264,11 +264,23 @@ describe('servidor como autoridade', () => {
   it('segundo cliente no mesmo horário perde', async () => {
     const pub = (await s.call('/api/public/state')).data as DbState
     const slot = nextOpenSlot(pub)
-    const base = { serviceIds: [pub.services[0]!.id], barberId: slot.barberId, start: slot.start, email: 'a@teste.com' }
+    const base = { serviceIds: [pub.services[0]!.id], barberId: slot.barberId, start: slot.start, email: 'a@teste.com', birthDate: '1990-03-15' }
     expect((await s.call('/api/public/book', { body: { ...base, name: 'Primeiro', phone: '11977776666' } })).status).toBe(200)
     const second = await s.call('/api/public/book', { body: { ...base, name: 'Segundo', phone: '11977775555' } })
     expect(second.status).toBe(422)
     expect((await s.state(token)).clients.length).toBe(1)
+  })
+
+  it('agendamento público exige data de nascimento válida', async () => {
+    const pub = (await s.call('/api/public/state')).data as DbState
+    const slot = nextOpenSlot(pub)
+    const body = { name: 'Cliente Teste', phone: '11977776666', email: 'teste@teste.com', serviceIds: [pub.services[0]!.id], barberId: slot.barberId, start: slot.start }
+    const old = await s.call('/api/public/book', { body })
+    expect(old.status).toBe(400)
+    expect(old.data.error.message).toMatch(/Atualize a página/)
+    expect((await s.call('/api/public/book', { body: { ...body, birthDate: '2026-02-30' } })).status).toBe(422)
+    expect((await s.call('/api/public/book', { body: { ...body, birthDate: '1990-03-15' } })).status).toBe(200)
+    expect((await s.state(token)).clients[0]).toMatchObject({ birthDate: '1990-03-15', birthday: '03-15' })
   })
 
   it('comando concorrente é refeito sobre a versão nova, sem perder nada', async () => {
@@ -909,7 +921,7 @@ describe('pente fino de segurança', () => {
     const date = addDays(dateKey(now), 1)
     const slots = onlineSlots(pub, pub.barbers[0]!.id, date, 30, now).slice(0, 8)
     for (const [i, slot] of slots.entries()) {
-      await s.call('/api/public/book', { body: { name: `Pessoa ${i}`, phone: `1197777${String(i).padStart(4, '0')}`, email: 'vitima@teste.com', serviceIds: [pub.services[0]!.id], barberId: slot.barberId, start: slot.start } })
+      await s.call('/api/public/book', { body: { name: `Pessoa ${i}`, phone: `1197777${String(i).padStart(4, '0')}`, email: 'vitima@teste.com', birthDate: '1990-03-15', serviceIds: [pub.services[0]!.id], barberId: slot.barberId, start: slot.start } })
     }
     expect(s.mails.filter((m) => m.to === 'vitima@teste.com').length).toBe(6)
   })
@@ -922,7 +934,7 @@ describe('experiência do cliente', () => {
     const pub = (await s.call('/api/public/state')).data as DbState
     const slot = nextOpenSlot(pub)
     const r = await s.call('/api/public/book', {
-      body: { name: 'Gilmar Teste', phone: '11977776666', email: 'gilmar@teste.com', serviceIds: [pub.services[0]!.id], barberId: slot.barberId, start: slot.start, ...extra },
+      body: { name: 'Gilmar Teste', phone: '11977776666', email: 'gilmar@teste.com', birthDate: '1990-03-15', serviceIds: [pub.services[0]!.id], barberId: slot.barberId, start: slot.start, ...extra },
     })
     expect(r.status).toBe(200)
     const st = await s.state(owner)
@@ -964,7 +976,7 @@ describe('experiência do cliente', () => {
     await s.call('/api/command', { token: owner, body: { name: 'upsertCoupon', input: { code: 'VOLTEI15', type: 'percent', value: 1500, minCents: 0, maxUses: null, validFrom: '2026-01-01', validTo: '2027-12-31', active: true } } })
     const pub = (await s.call('/api/public/state')).data as DbState
     const slots = onlineSlots(pub, pub.barbers[0]!.id, addDays(dateKey(new Date().toISOString()), 2), 30, new Date().toISOString())
-    const base = { email: 'a@teste.com', serviceIds: [pub.services[0]!.id], barberId: pub.barbers[0]!.id }
+    const base = { email: 'a@teste.com', birthDate: '1990-03-15', serviceIds: [pub.services[0]!.id], barberId: pub.barbers[0]!.id }
     await s.call('/api/public/book', { body: { ...base, name: 'Com Cupom', phone: '11911112222', start: slots[0]!.start, coupon: 'voltei15' } })
     await s.call('/api/public/book', { body: { ...base, name: 'Cupom Falso', phone: '11911113333', start: slots[2]!.start, coupon: 'NAOEXISTE' } })
     const notes = (await s.state(owner)).appointments.map((a) => a.notes).sort()

@@ -12,7 +12,7 @@ type Step = 'services' | 'barber' | 'time' | 'details' | 'done'
 const REMEMBER = 'samuel-cliente'
 
 /** Dados de quem já agendou neste celular: na próxima vez, é só confirmar. */
-function remembered(): { name: string; phone: string; email: string } | null {
+function remembered(): { name: string; phone: string; email: string; birthDate?: string } | null {
   try {
     return JSON.parse(localStorage.getItem(REMEMBER) ?? 'null')
   } catch {
@@ -52,6 +52,7 @@ export default function PublicBookingPage() {
   const [name, setName] = useState(saved?.name ?? '')
   const [phone, setPhone] = useState(saved?.phone ?? '')
   const [email, setEmail] = useState(saved?.email ?? '')
+  const [birthDate, setBirthDate] = useState(saved?.birthDate ?? '')
   const [editing, setEditing] = useState(!saved)
   const [optIn, setOptIn] = useState(false)
   const [booked, setBooked] = useState<{ start: string; end: string; barberId: ID } | null>(null)
@@ -108,10 +109,10 @@ export default function PublicBookingPage() {
     try {
       const r = await api<{ start: string; end: string; barberId: ID }>('/api/public/book', {
         method: 'POST',
-        body: JSON.stringify({ name, phone, email, serviceIds, barberId: slot.barberId, start: slot.start, marketingOptIn: optIn, coupon: coupon || null }),
+        body: JSON.stringify({ name, phone, email, birthDate, serviceIds, barberId: slot.barberId, start: slot.start, marketingOptIn: optIn, coupon: coupon || null }),
       })
       try {
-        localStorage.setItem(REMEMBER, JSON.stringify({ name, phone, email }))
+        localStorage.setItem(REMEMBER, JSON.stringify({ name, phone, email, birthDate }))
       } catch {
         // Sem armazenamento: na próxima vez a pessoa digita de novo.
       }
@@ -253,6 +254,7 @@ export default function PublicBookingPage() {
               <button type="button" onClick={() => setEditing(true)} className="min-h-10 shrink-0 text-sm font-bold text-brass">Não é você?</button>
             </Card>
           )}
+          <Field label="Data de nascimento"><Input type="date" autoComplete="bday" min="1900-01-01" max={today} value={birthDate} onChange={(e) => setBirthDate(e.target.value)} /></Field>
         </div>
       )}
 
@@ -297,7 +299,7 @@ export default function PublicBookingPage() {
             )}
             {step === 'time' && <p className="py-3 text-center text-sm text-muted">Toque no horário que preferir</p>}
             {step === 'details' && (
-              <Button variant="primary" block disabled={busy || !name || !phone || !email} onClick={() => void confirm()}>
+              <Button variant="primary" block disabled={busy || !name || !phone || !email || !birthDate} onClick={() => void confirm()}>
                 {busy ? 'Agendando…' : slot ? `Confirmar ${timeOf(slot.start)}` : 'Confirmar agendamento'}
               </Button>
             )}

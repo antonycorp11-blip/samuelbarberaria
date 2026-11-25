@@ -83,6 +83,8 @@ export interface Client {
   email: string
   /** MM-DD: o ano não importa para a mensagem de aniversário. */
   birthday: string | null
+  /** AAAA-MM-DD, quando o ano foi informado. */
+  birthDate?: string | null
   notes: string
   marketingOptIn: boolean
   stamps: number

@@ -1,4 +1,5 @@
 import { isValidEmail, normalizePhone } from './agenda'
+import { validBirthDate } from './clients'
 import { audit, base, must, type Command } from './engine'
 import { fail } from './errors'
 import { enqueue, welcomeMessage } from './messages'
@@ -34,13 +35,6 @@ export interface OnlineSubscription {
   email: string
 }
 
-/** Data completa no formato AAAA-MM-DD, de 1900 até hoje. */
-function validBirthDate(value: string, today: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value < '1900-01-01' || value > today) return false
-  const t = Date.parse(`${value}T00:00:00Z`)
-  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === value
-}
-
 export const startOnlineSubscription: Command<
   { name: string; phone: string; email: string; birthDate: string; planId: ID; method?: GatewayMethod },
   OnlineSubscription
@@ -52,7 +46,6 @@ export const startOnlineSubscription: Command<
   if (phone.length < 10 || phone.length > 11) fail('bad_phone', 'Informe um celular com DDD.')
   if (!isValidEmail(email)) fail('bad_email', 'Informe um e-mail válido.')
   if (!validBirthDate(i.birthDate, dateKey(ctx.now))) fail('bad_birthday', 'Informe sua data de nascimento.')
-  // O cadastro guarda só dia e mês, que é o que a mensagem de aniversário usa.
   const birthday = i.birthDate.slice(5)
   const plan = must(s.plans.find((p) => p.id === i.planId), 'Plano')
   if (!plan.active) fail('inactive_plan', 'Este plano não está disponível.')
@@ -60,9 +53,12 @@ export const startOnlineSubscription: Command<
   let client = d.clients.find((c) => c.phone === phone)
   if (client) {
     if (!client.email) client.email = email
-    if (!client.birthday) client.birthday = birthday
+    if (!client.birthDate) {
+      client.birthDate = i.birthDate
+      client.birthday = birthday
+    } else client.birthday = client.birthDate.slice(5)
   } else {
-    client = { id: ctx.id(), name: i.name.trim(), phone, email, birthday, notes: '', marketingOptIn: false, stamps: 0, rewards: 0, createdAt: ctx.now }
+    client = { id: ctx.id(), name: i.name.trim(), phone, email, birthDate: i.birthDate, birthday, notes: '', marketingOptIn: false, stamps: 0, rewards: 0, createdAt: ctx.now }
     d.clients.push(client)
     enqueue(d, ctx, welcomeMessage(client))
   }

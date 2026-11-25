@@ -49,7 +49,7 @@ function simulate(seed: number, steps: number) {
     () => {
       const n = Math.floor(r() * 90000)
       w.do(bookOnline, {
-        name: `Cliente ${n}`, phone: `119${String(n).padStart(8, '0')}`, email: `c${n}@teste.com`, marketingOptIn: r() < 0.5,
+        name: `Cliente ${n}`, phone: `119${String(n).padStart(8, '0')}`, email: `c${n}@teste.com`, birthDate: '1990-03-15', marketingOptIn: r() < 0.5,
         serviceIds: [cut], barberId: pick([ana, beto]), start: addMinutes(w.now, 60 + Math.floor(r() * 96) * 15),
       })
     },

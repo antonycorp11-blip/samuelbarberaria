@@ -1,9 +1,10 @@
 import { Check, Copy, CreditCard, Crown, QrCode } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { api } from '@/data/store'
+import { api, nowISO } from '@/data/store'
 import { formatBps, formatBRL } from '@/domain/money'
 import { planDaysLabel } from '@/domain/subscriptions'
+import { dateKey } from '@/domain/time'
 import { emptyState, type DbState, type ID } from '@/domain/types'
 import { Button, Card, cx, Field, Input, toast } from '@/ui/kit'
 
@@ -217,7 +218,7 @@ export default function PublicClubPage() {
             <Input autoComplete="email" inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} />
           </Field>
           <Field label="Data de nascimento">
-            <Input type="date" autoComplete="bday" min="1900-01-01" max={new Date().toISOString().slice(0, 10)} value={birthDate} onChange={(e) => setBirthDate(e.target.value)} />
+            <Input type="date" autoComplete="bday" min="1900-01-01" max={dateKey(nowISO())} value={birthDate} onChange={(e) => setBirthDate(e.target.value)} />
           </Field>
           <div>
             <p className="mb-1.5 text-sm font-semibold">Como quer pagar?</p>

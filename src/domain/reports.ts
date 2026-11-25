@@ -1,8 +1,25 @@
 import { OCCUPYING, workWindow } from './agenda'
+import { ageOn } from './clients'
 import { allocate } from './money'
 import { paidSales } from './finance'
 import { addDays, dateKey, daysBetween, diffDays } from './time'
 import type { Cents, DateKey, DbState, ID } from './types'
+
+export const AGE_BUCKETS = ['Até 17', '18–24', '25–34', '35–44', '45–54', '55+'] as const
+
+export function clientAges(s: DbState, today: DateKey) {
+  const ages = s.clients.filter((c) => c.birthDate).map((c) => ageOn(c.birthDate as string, today))
+  const counts = AGE_BUCKETS.map(() => 0)
+  for (const age of ages) {
+    const index = age <= 17 ? 0 : age <= 24 ? 1 : age <= 34 ? 2 : age <= 44 ? 3 : age <= 54 ? 4 : 5
+    counts[index]!++
+  }
+  return {
+    average: ages.length ? ages.reduce((sum, age) => sum + age, 0) / ages.length : null,
+    withoutYear: s.clients.length - ages.length,
+    buckets: AGE_BUCKETS.map((label, index) => ({ label, count: counts[index]!, percent: ages.length ? counts[index]! / ages.length * 100 : 0 })),
+  }
+}
 
 export interface BarberRank {
   barberId: ID

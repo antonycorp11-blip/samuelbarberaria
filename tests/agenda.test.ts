@@ -3,6 +3,7 @@ import {
   addToWaitlist, availableSlots, bookOnline, cancelAppointment, createAppointment, createBlock, findFitIns,
   onlineSlots, rescheduleAppointment, setAppointmentStatus,
 } from '../src/domain/agenda'
+import { upsertClient } from '../src/domain/clients'
 import { upsertBarber } from '../src/domain/team'
 import { timeOf, toISO } from '../src/domain/time'
 import { assertInvariants, setup } from './helpers'
@@ -113,7 +114,7 @@ describe('agendamento', () => {
 })
 
 describe('agendamento online', () => {
-  const data = { name: 'Novo Cliente', phone: '(11) 98888-7777', email: 'NOVO@teste.com', marketingOptIn: false }
+  const data = { name: 'Novo Cliente', phone: '(11) 98888-7777', email: 'NOVO@teste.com', birthDate: '1990-03-15', marketingOptIn: false }
 
   it('cria cliente, normaliza dados e reaproveita cadastro pelo celular', () => {
     const { w, ana, cut } = setup()
@@ -122,7 +123,28 @@ describe('agendamento online', () => {
     w.do(bookOnline, { ...data, phone: '+55 11 98888-7777', serviceIds: [cut], barberId: ana, start: at('11:00') })
     expect(w.state.clients.length).toBe(before + 1)
     expect(w.state.clients.at(-1)?.email).toBe('novo@teste.com')
+    expect(w.state.clients.at(-1)).toMatchObject({ birthDate: '1990-03-15', birthday: '03-15' })
     expect(w.state.appointments.every((a) => a.source === 'online')).toBe(true)
+  })
+
+  it('recusa data de nascimento ausente ou inválida', () => {
+    const { w, ana, cut } = setup()
+    const input = { ...data, serviceIds: [cut], barberId: ana, start: at('10:00') }
+    for (const birthDate of ['', '2026-02-30', '1899-12-31', '2027-01-01']) {
+      expect(() => w.do(bookOnline, { ...input, birthDate })).toThrow(/Informe sua data de nascimento/)
+    }
+    expect(w.state.appointments).toHaveLength(0)
+  })
+
+  it('completa o cadastro antigo e preserva uma data completa', () => {
+    const { w, ana, cut, joao } = setup()
+    const client = w.state.clients.find((c) => c.id === joao)!
+    w.do(upsertClient, { ...client, birthday: '04-20' })
+    const input = { ...data, phone: client.phone, serviceIds: [cut], barberId: ana }
+    w.do(bookOnline, { ...input, birthDate: '1988-05-10', start: at('10:00') })
+    expect(w.state.clients.find((c) => c.id === joao)).toMatchObject({ birthDate: '1988-05-10', birthday: '05-10' })
+    w.do(bookOnline, { ...input, birthDate: '2000-06-11', start: at('11:00') })
+    expect(w.state.clients.find((c) => c.id === joao)).toMatchObject({ birthDate: '1988-05-10', birthday: '05-10' })
   })
 
   it('recusa horário sem a antecedência mínima e além da janela', () => {

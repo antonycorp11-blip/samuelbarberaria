@@ -24,6 +24,7 @@ describe('clube com cartão automático', () => {
     expect(subscriptionMetrics(w.state).activeCount).toBe(0)
     expect(w.state.charges.length).toBe(0)
     expect(w.state.clients.find((c) => c.phone === '11966665555')?.name).toBe('Carlos Novo')
+    expect(w.state.clients.find((c) => c.phone === '11966665555')).toMatchObject({ birthDate: '1990-03-15', birthday: '03-15' })
   })
 
   it('primeiro pagamento ativa, lança no caixa e avisa cliente e equipe', () => {
@@ -106,6 +107,16 @@ describe('clube com cartão automático', () => {
     expect(w.state.clients.find((c) => c.phone === '11966665555')?.birthday).toBe('03-15')
     const tryDate = (birthDate: string) => () => w.do(startOnlineSubscription, { name: 'Bia', phone: '11944443333', email: 'bia@teste.com', birthDate, planId })
     for (const bad of ['', '15/03/1990', '1990-02-30', '1899-12-31', '2026-03-03']) expect(tryDate(bad)).toThrow(/data de nascimento/)
+  })
+
+  it('completa a data antiga no clube e não altera uma data completa', () => {
+    const { w, cut, joao } = setup()
+    const planId = w.do(upsertPlan, { name: 'Clube', priceCents: 12900, visitsPerCycle: 4, serviceIds: [cut], productDiscountBps: 1000, benefits: [] })
+    const client = w.state.clients.find((c) => c.id === joao)!
+    w.do(startOnlineSubscription, { name: client.name, phone: client.phone, email: client.email, birthDate: '1988-05-10', planId })
+    expect(w.state.clients.find((c) => c.id === joao)).toMatchObject({ birthDate: '1988-05-10', birthday: '05-10' })
+    w.do(startOnlineSubscription, { name: client.name, phone: client.phone, email: client.email, birthDate: '2000-06-11', planId })
+    expect(w.state.clients.find((c) => c.id === joao)).toMatchObject({ birthDate: '1988-05-10', birthday: '05-10' })
   })
 
   it('assinante ativo não assina de novo', () => {

@@ -12,14 +12,12 @@ export function ClientForm({ client, onClose }: { client?: Client; onClose: () =
   const [name, setName] = useState(client?.name ?? '')
   const [phone, setPhone] = useState(client?.phone ?? '')
   const [email, setEmail] = useState(client?.email ?? '')
-  const [birthday, setBirthday] = useState(client?.birthday ? `${client.birthday.slice(3)}/${client.birthday.slice(0, 2)}` : '')
+  const [birthDate, setBirthDate] = useState(client?.birthDate ?? '')
   const [notes, setNotes] = useState(client?.notes ?? '')
   const [optIn, setOptIn] = useState(client?.marketingOptIn ?? false)
   const save = () => {
-    const m = birthday.match(/^(\d{2})\/(\d{2})$/)
-    const value = m ? `${m[2]}-${m[1]}` : birthday ? 'invalido' : null
     const ok = attempt(
-      () => exec(upsertClient, { id: client?.id, name, phone, email, birthday: value, notes, marketingOptIn: optIn }),
+      () => exec(upsertClient, { id: client?.id, name, phone, email, birthDate: birthDate || null, birthday: birthDate || client?.birthDate ? undefined : client?.birthday ?? null, notes, marketingOptIn: optIn }),
       'Cliente salvo',
     )
     if (ok) onClose()
@@ -29,7 +27,7 @@ export function ClientForm({ client, onClose }: { client?: Client; onClose: () =
       <Field label="Nome"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
       <Field label="Celular com DDD"><Input inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
       <Field label="E-mail" hint="Usado para confirmações e lembretes."><Input inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
-      <Field label="Aniversário (dia/mês)"><Input inputMode="numeric" placeholder="25/12" maxLength={5} value={birthday} onChange={(e) => setBirthday(e.target.value)} /></Field>
+      <Field label="Data de nascimento" hint={!birthDate && client?.birthday && !client.birthDate ? `${client.birthday.slice(3)}/${client.birthday.slice(0, 2)} (sem ano)` : undefined}><Input type="date" autoComplete="bday" min="1900-01-01" max={dateKey(nowISO())} value={birthDate} onChange={(e) => setBirthDate(e.target.value)} /></Field>
       <Field label="Observações"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Preferências do corte, alergias..." /></Field>
       <Toggle checked={optIn} onChange={setOptIn} label="Aceita receber promoções" hint="Exigido pela LGPD para campanhas." />
     </Sheet>

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { nowISO, useDb } from '@/data/store'
 import { averageTicket, dre, METHOD_LABEL, paidSales, revenueSeries } from '@/domain/finance'
 import { formatBps, formatBRL } from '@/domain/money'
-import { barberRanking, commissionHistory, occupancy, returnRate, topServices } from '@/domain/reports'
+import { barberRanking, clientAges, commissionHistory, occupancy, returnRate, topServices } from '@/domain/reports'
 import { addDays, dateKey, dayLabel, endOfMonth, startOfMonth } from '@/domain/time'
 import { Avatar, Bars, Card, Chips, Empty, List, Meter, PageHeader, Row, Section, Stat } from '@/ui/kit'
 
@@ -34,6 +34,7 @@ export default function ReportsPage() {
       ranking: barberRanking(db, from, to),
       payouts: commissionHistory(db, from, to),
       bars: series.map((d) => ({ label: dayLabel(d.date), value: d.cents })),
+      ages: clientAges(db, today),
     }
   }, [db, from, to, today])
   const topQty = data.services[0]?.qty ?? 1
@@ -66,6 +67,24 @@ export default function ReportsPage() {
         <Stat label="Taxa de retorno" value={formatBps(data.ret.rateBps)} hint={`${data.ret.returned} de ${data.ret.eligible} clientes`} />
         <Stat label="Lucro líquido" value={formatBRL(data.result.netProfit)} tone={data.result.netProfit >= 0 ? 'ok' : 'bad'} />
       </div>
+
+      <Section title="Idade dos clientes">
+        <div className="grid grid-cols-2 gap-2">
+          <Stat label="Idade média" value={data.ages.average === null ? '—' : `${data.ages.average.toFixed(1).replace('.', ',')} anos`} />
+          <Stat label="Sem ano cadastrado" value={String(data.ages.withoutYear)} />
+        </div>
+        <Card className="mt-2 space-y-3 p-3.5">
+          {data.ages.buckets.map((bucket) => (
+            <div key={bucket.label}>
+              <div className="mb-1 flex justify-between gap-2 text-sm">
+                <span className="font-semibold">{bucket.label}</span>
+                <span className="tnum text-muted">{bucket.count} · {bucket.percent.toFixed(1).replace('.', ',')}%</span>
+              </div>
+              <Meter bps={bucket.percent * 100} />
+            </div>
+          ))}
+        </Card>
+      </Section>
 
       <Section title="Serviços mais vendidos">
         {data.services.length === 0 ? <Empty title="Sem vendas no período" /> : (

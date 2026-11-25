@@ -5,8 +5,21 @@ import { enqueue, welcomeMessage } from './messages'
 import { addDays, dateKey, diffDays } from './time'
 import type { Appointment, Client, DateKey, DbState, ID, Sale } from './types'
 
+/** Data completa de 1900 até hoje. */
+export function validBirthDate(value: string, today: DateKey): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value < '1900-01-01' || value > today) return false
+  const t = Date.parse(`${value}T00:00:00Z`)
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === value
+}
+
+export function ageOn(birthDate: string, today: DateKey): number {
+  let age = Number(today.slice(0, 4)) - Number(birthDate.slice(0, 4))
+  if (today.slice(5) < birthDate.slice(5)) age--
+  return age
+}
+
 export const upsertClient: Command<
-  { id?: ID; name: string; phone: string; email: string; birthday: string | null; notes: string; marketingOptIn: boolean },
+  { id?: ID; name: string; phone: string; email: string; birthDate?: string | null; birthday?: string | null; notes: string; marketingOptIn: boolean },
   ID
 > = (d, i, ctx) => {
   const s = base(d)
@@ -15,11 +28,15 @@ export const upsertClient: Command<
   if (i.name.trim().length < 2) fail('bad_name', 'Informe o nome do cliente.')
   if (phone.length < 10 || phone.length > 11) fail('bad_phone', 'Informe um celular com DDD.')
   if (email && !isValidEmail(email)) fail('bad_email', 'E-mail inválido.')
+  if (i.birthDate && !validBirthDate(i.birthDate, dateKey(ctx.now))) fail('bad_birthday', 'Data de nascimento inválida.')
   if (i.birthday && !/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(i.birthday)) fail('bad_birthday', 'Data de aniversário inválida.')
   if (s.clients.some((c) => c.phone === phone && c.id !== i.id)) fail('duplicate', 'Já existe cliente com este celular.')
-  const data = { name: i.name.trim(), phone, email, birthday: i.birthday, notes: i.notes, marketingOptIn: i.marketingOptIn }
+  const previous = i.id ? must(d.clients.find((c) => c.id === i.id), 'Cliente') : undefined
+  const birthDate = i.birthDate !== undefined ? i.birthDate : i.birthday !== undefined ? null : previous?.birthDate ?? null
+  const birthday = birthDate ? birthDate.slice(5) : i.birthday !== undefined ? i.birthday : i.birthDate !== undefined ? null : previous?.birthday ?? null
+  const data = { name: i.name.trim(), phone, email, birthDate, birthday, notes: i.notes, marketingOptIn: i.marketingOptIn }
   if (i.id) {
-    Object.assign(must(d.clients.find((c) => c.id === i.id), 'Cliente'), data)
+    Object.assign(previous as Client, data)
     audit(d, ctx, 'cliente.editar', i.id)
     return i.id
   }
