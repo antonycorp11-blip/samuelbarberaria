@@ -12,7 +12,7 @@ describe('código Pix do balcão', () => {
 
   it('monta o código com chave, valor, nome sem acento e cidade', () => {
     const code = pixPayload({ key: SHOP_PIX_KEY, name: 'Samuel Barbearia Ação', city: 'São Paulo', amountCents: 4500 })
-    expect(code).toContain('0014br.gov.bcb.pix0136449bfdf7-02f5-4e63-b17a-8e326c96d530')
+    expect(code).toContain('0014br.gov.bcb.pix01368b26f858-fcea-4cc9-8f30-45097bbd7f8c')
     expect(code).toContain('540545.00')
     expect(code).toContain('5921SAMUEL BARBEARIA ACAO')
     expect(code).toContain('6009SAO PAULO')
@@ -23,6 +23,13 @@ describe('código Pix do balcão', () => {
     const code = pixPayload({ key: 'chave@teste.com', name: 'Loja', city: '' })
     expect(code).not.toContain('5404')
     expect(code).toContain('6006BRASIL')
+  })
+
+  it('o QR do banco da barbearia confere: mesma chave e código válido', () => {
+    const bank = '00020126580014br.gov.bcb.pix01368b26f858-fcea-4cc9-8f30-45097bbd7f8c5204000053039865802BR5913Samuel  Lucas6009Sao Paulo62240520daqr13436350568950156304EEE6'
+    expect(crc16(bank.slice(0, -4))).toBe('EEE6')
+    expect(bank).toContain(`0136${SHOP_PIX_KEY}`)
+    expect(shopPix(emptyState().settings, 4500)).toContain('6006CUIABA')
   })
 
   it('usa a chave do Samuel por padrão e some quando apagada nos Ajustes', () => {

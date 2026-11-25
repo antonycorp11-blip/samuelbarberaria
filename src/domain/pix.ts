@@ -1,7 +1,10 @@
 import type { Cents, Settings } from './types'
 
-/** Chave aleatória da conta Asaas do Samuel. Pode ser trocada em Ajustes; vazia desliga o Pix do balcão. */
-export const SHOP_PIX_KEY = '449bfdf7-02f5-4e63-b17a-8e326c96d530'
+/**
+ * Chave aleatória da conta bancária da barbearia (tirada do QR do banco). O balcão recebe direto
+ * no banco, sem passar pelo Asaas, que fica só para os planos. Pode ser trocada em Ajustes; vazia desliga.
+ */
+export const SHOP_PIX_KEY = '8b26f858-fcea-4cc9-8f30-45097bbd7f8c'
 
 export function pixKeyOf(s: Settings): string {
   return (s.pixKey ?? SHOP_PIX_KEY).trim()
@@ -53,5 +56,5 @@ export function pixPayload(o: { key: string; name: string; city: string; amountC
 /** Código Pix da barbearia para um valor, ou null se não houver chave. */
 export function shopPix(s: Settings, amountCents?: Cents): string | null {
   const key = pixKeyOf(s)
-  return key ? pixPayload({ key, name: s.shopName, city: s.pixCity ?? '', amountCents }) : null
+  return key ? pixPayload({ key, name: s.shopName, city: s.pixCity || 'Cuiaba', amountCents }) : null
 }

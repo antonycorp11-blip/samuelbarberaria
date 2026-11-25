@@ -430,7 +430,8 @@ export function CheckoutSheet({ appointment, onClose, onBack }: { appointment?: 
   const [received, setReceived] = useState(0)
   const [scanning, setScanning] = useState(false)
   const [adding, setAdding] = useState(false)
-  const [showPix, setShowPix] = useState(false)
+  // O QR do Pix já aparece no fim do caixa; dá para esconder.
+  const [showPix, setShowPix] = useState(true)
 
   const input = {
     appointmentId: appointment?.id ?? null, clientId, barberId: barberId ?? '', items,
