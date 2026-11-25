@@ -137,6 +137,7 @@ export interface Product {
   id: ID
   name: string
   barcode?: string | null
+  barcodes?: string[]
   salePriceCents: Cents
   avgCostCents: Cents
   qty: number

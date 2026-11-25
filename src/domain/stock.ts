@@ -10,12 +10,39 @@ export function validGtin(value: string): boolean {
   return (10 - sum % 10) % 10 === digits[digits.length - 1]
 }
 
-function sameBarcode(a: string, b: string): boolean {
+export function sameBarcode(a: string, b: string): boolean {
   return a === b || (a.length === 12 && b === `0${a}`) || (b.length === 12 && a === `0${b}`)
 }
 
+export function productCodes(p: Product): string[] {
+  return [...new Set([...(p.barcodes ?? []), p.barcode].filter((code): code is string => Boolean(code)))]
+}
+
 export function productByBarcode(code: string, products: Product[], activeOnly = true): Product | null {
-  return products.find((p) => (!activeOnly || p.active) && p.barcode && sameBarcode(p.barcode, code)) ?? null
+  return products.find((p) => (!activeOnly || p.active) && productCodes(p).some((own) => sameBarcode(own, code))) ?? null
+}
+
+export function brandMatches(code: string, products: Product[]): { product: Product; sameCompany: boolean }[] {
+  return products.filter((p) => p.active).map((product) => {
+    const common = productCodes(product).filter((own) => code.length === 13 && own.length === 13).reduce((best, own) => {
+      let length = 0
+      while (length < 13 && code[length] === own[length]) length++
+      return Math.max(best, length)
+    }, 0)
+    return { product, sameCompany: common >= 7 }
+  }).sort((a, b) => Number(b.sameCompany) - Number(a.sameCompany) || a.product.name.localeCompare(b.product.name, 'pt-BR'))
+}
+
+const normalizeBarcode = (barcode: string) => barcode.replace(/\D/g, '')
+const uniqueCodes = (codes: string[]) => codes.filter((code, index) => codes.findIndex((other) => sameBarcode(other, code)) === index)
+
+function checkCodes(codes: string[], products: Product[], ownId?: ID) {
+  for (const code of codes) {
+    if (!validGtin(code)) fail('bad_barcode', 'Código de barras inválido.')
+    if (products.some((p) => p.id !== ownId && p.active && productCodes(p).some((own) => sameBarcode(own, code)))) {
+      fail('duplicate_barcode', 'Esse código de barras já é de outro produto.')
+    }
+  }
 }
 
 export function weightedAverage(qty: number, avg: Cents, addQty: number, addCost: Cents): Cents {
@@ -24,31 +51,42 @@ export function weightedAverage(qty: number, avg: Cents, addQty: number, addCost
 }
 
 export const upsertProduct: Command<
-  { id?: ID; name: string; salePriceCents: Cents; minQty: number; active?: boolean; barcode?: string | null },
+  { id?: ID; name: string; salePriceCents: Cents; minQty: number; active?: boolean; barcode?: string | null; barcodes?: string[] },
   ID
 > = (d, i, ctx) => {
   requireOwner(ctx)
   if (!i.name.trim()) fail('bad_name', 'Informe o nome do produto.')
   if (i.salePriceCents < 0 || i.minQty < 0) fail('bad_value', 'Valores não podem ser negativos.')
   const current = i.id ? must(d.products.find((p) => p.id === i.id), 'Produto') : null
-  const barcode = i.barcode === undefined ? current?.barcode ?? null : i.barcode?.replace(/\D/g, '') || null
-  if (barcode && !validGtin(barcode)) fail('bad_barcode', 'Código de barras inválido.')
-  if (barcode && d.products.some((p) => p.id !== i.id && p.active && p.barcode && sameBarcode(p.barcode, barcode))) {
-    fail('duplicate_barcode', 'Esse código de barras já é de outro produto.')
-  }
+  const codes = uniqueCodes((i.barcodes ?? (i.barcode !== undefined ? (i.barcode ? [i.barcode] : []) : current ? productCodes(current) : []))
+    .map(normalizeBarcode))
+  checkCodes(codes, d.products, i.id)
   if (current) {
     current.name = i.name.trim()
     current.salePriceCents = i.salePriceCents
     current.minQty = i.minQty
-    current.barcode = barcode
+    current.barcodes = codes
+    current.barcode = codes[0] ?? null
     current.active = i.active ?? current.active
     return current.id
   }
   const id = ctx.id()
   d.products.push({
-    id, name: i.name.trim(), barcode, salePriceCents: i.salePriceCents, minQty: i.minQty, avgCostCents: 0, qty: 0, active: true,
+    id, name: i.name.trim(), barcodes: codes, barcode: codes[0] ?? null, salePriceCents: i.salePriceCents, minQty: i.minQty, avgCostCents: 0, qty: 0, active: true,
   })
   return id
+}
+
+export const linkBarcode: Command<{ productId: ID; barcode: string }> = (d, i, ctx) => {
+  requireOwner(ctx)
+  const product = must(d.products.find((p) => p.id === i.productId), 'Produto')
+  const code = normalizeBarcode(i.barcode)
+  checkCodes([code], d.products, product.id)
+  const codes = productCodes(product)
+  if (codes.some((own) => sameBarcode(own, code))) return
+  product.barcodes = [...codes, code]
+  product.barcode = product.barcodes[0] ?? null
+  audit(d, ctx, 'estoque.codigo.vincular', product.id, code)
 }
 
 export const stockIn: Command<{ productId: ID; qty: number; unitCostCents: Cents; method?: PaymentMethod | null; note?: string }> = (d, i, ctx) => {

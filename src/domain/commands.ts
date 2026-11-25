@@ -7,7 +7,7 @@ import type { Command } from './engine'
 import { addTransaction, reverseTransaction } from './finance'
 import { sendCampaign, upsertCoupon } from './marketing'
 import { checkout, refundSale } from './sales'
-import { stockAdjust, stockIn, stockOut, upsertProduct } from './stock'
+import { linkBarcode, stockAdjust, stockIn, stockOut, upsertProduct } from './stock'
 import { cancelSubscription, payCharge, subscribe, upsertPlan } from './subscriptions'
 import { payCommissions, upsertBarber } from './team'
 
@@ -16,7 +16,7 @@ import { payCommissions, upsertBarber } from './team'
 export const COMMANDS: Record<string, Command<any, any>> = {
   addToWaitlist, cancelAppointment, createAppointment, createBlock, removeBlock, removeFromWaitlist, rescheduleAppointment,
   setAppointmentStatus, updateSettings, upsertService, upsertClient, addTransaction, reverseTransaction, sendCampaign, upsertCoupon,
-  checkout, refundSale, stockAdjust, stockIn, stockOut, upsertProduct, cancelSubscription, payCharge, subscribe, upsertPlan,
+  checkout, refundSale, linkBarcode, stockAdjust, stockIn, stockOut, upsertProduct, cancelSubscription, payCharge, subscribe, upsertPlan,
   payCommissions, upsertBarber,
 }
 
