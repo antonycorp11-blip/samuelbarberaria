@@ -2,7 +2,7 @@ name: Backup diário
 
 on:
   schedule:
-    - cron: '0 6 * * *' # 03:00 em São Paulo
+    - cron: '0 6 * * *' # 02:00 em Cuiabá
   workflow_dispatch:
 
 jobs:

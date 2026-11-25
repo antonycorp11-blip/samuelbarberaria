@@ -15,10 +15,10 @@ describe('dinheiro', () => {
   it('aplica percentual', () => expect(applyBps(3333, 4500)).toBe(1500))
 })
 
-describe('datas em São Paulo', () => {
+describe('datas em Cuiabá', () => {
   it('23:30 local ainda é o mesmo dia, mesmo já sendo o dia seguinte em UTC', () => {
     const iso = toISO('2026-03-02', '23:30')
-    expect(iso).toBe('2026-03-03T02:30:00.000Z')
+    expect(iso).toBe('2026-03-03T03:30:00.000Z')
     expect(dateKey(iso)).toBe('2026-03-02')
     expect(timeOf(iso)).toBe('23:30')
   })

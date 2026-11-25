@@ -6,10 +6,10 @@ import { upsertBarber } from '../src/domain/team'
 import { emptyState, type Actor, type DbState } from '../src/domain/types'
 import { dateKey } from '../src/domain/time'
 
-/** Banco de testes com relógio controlado. 02/03/2026 é uma segunda-feira, 09:00 em São Paulo. */
+/** Banco de testes com relógio controlado. 02/03/2026 é uma segunda-feira, 09:00 em Cuiabá. */
 export class World {
   state: DbState = emptyState()
-  now = '2026-03-02T12:00:00.000Z'
+  now = '2026-03-02T13:00:00.000Z'
   actor: Actor = SYSTEM_ACTOR
   private seq = 0
 

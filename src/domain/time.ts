@@ -1,10 +1,10 @@
 import type { DateKey, ISO } from './types'
 
 /**
- * Único ponto do sistema que conhece o fuso. O Brasil não tem horário de verão
- * desde 2019, então São Paulo é UTC-3 fixo.
+ * Único ponto do sistema que conhece o fuso. A barbearia fica em Cuiabá (MT), uma hora
+ * atrás de Brasília. O Brasil não tem horário de verão desde 2019, então é UTC-4 fixo.
  */
-const OFFSET_MIN = -180
+const OFFSET_MIN = -240
 const MIN = 60_000
 const DAY = 86_400_000
 
